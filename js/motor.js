@@ -48,8 +48,9 @@ export function tipoDeDia(iso) {
 
 // ---------- planillas ----------
 const ALIAS = [
-  ['facultad', /^fac/], ['escalberdi', /^esc/], ['inta', /\binta\b/], ['km5', /km\s*5/], ['virgen', /virgen/],
-  ['terminal', /terminal/], ['cruzsur', /cruz/], ['plazaalberdi', /plaza\s*alb/], ['lapridacordoba', /laprida/], ['25mayo9julio', /25.*mayo|mayo.*9|9.*julio/],
+  ['facultad', /^fac/], ['escalberdi', /^esc/], ['inta', /\binta\b/], ['km5', /km\s*5|kms\s*1\/2/], ['virgen', /virgen/],
+  // "Ramírez y Saraví" / "Ramírez y Ruiz Moreno" son las dos esquinas de la Terminal sobre Av. Ramírez
+  ['terminal', /terminal|ramirez.*(sarav|ruiz|moreno)/], ['cruzsur', /cruz/], ['plazaalberdi', /plaza\s*alb/], ['lapridacordoba', /laprida.*cor|cor.*laprida/], ['25mayo9julio', /25.*mayo|mayo.*9|9.*julio/],
 ];
 export function claveDePunto(nombre) {
   const n = sinAcentos(nombre).replace(/\s+/g, ' ').trim();
@@ -61,6 +62,15 @@ export function claveDePunto(nombre) {
 export function dondeVuelve(nombres) {
   const n = nombres.map(x => sinAcentos(x).replace(/\s+/g, ''));
   for (let i = 1; i < n.length; i++) if (n[i] && n[i] === n[i - 1]) return i;
+  // la vuelta es el espejo de la ida: busco el punto donde más columnas se reflejan (aguanta nombres mal leídos)
+  const pal = nombres.map(x => palabras(x)), parecidos = (a, b) => a.length && b.length && a.some(x => b.includes(x));
+  let mejor = 0, donde = 0;
+  for (let i = 1; i < n.length; i++) {
+    let iguales = 0;
+    for (let k = 0; i - 1 - k >= 0 && i + k < n.length; k++) if (parecidos(pal[i - 1 - k], pal[i + k])) iguales++;
+    if (iguales > mejor) { mejor = iguales; donde = i; }
+  }
+  if (mejor >= 3) return donde;
   for (let i = 1; i < n.length; i++) if (n[i] && n.slice(0, i).includes(n[i])) return i;
   return n.length;
 }
@@ -76,10 +86,26 @@ export function resolverColumna(linea, sentido, nombre) {
     // la línea no tiene esa cabecera en el mapa: lo trato como si saliera de Facultad, pero queda en duda
     if (!n && clave === 'escalberdi' && S.puntos?.facultad) { n = S.puntos.facultad; aprox = dudoso = true; }
     if (!n && clave === 'lapridacordoba') { n = sentido === 'ida' ? S.paradas.length : 1; aprox = true; }
-    return { ...base, punto: clave, parada: n, aprox, dudoso };
+    if (n || clave !== 'terminal') return { ...base, punto: clave, parada: n, aprox, dudoso };
   }
-  const s = S.paradas.find(p => contiene(p.nombre, nombre));
-  return { ...base, parada: s ? s.n : null };
+  // encabezado con forma de esquina ("Ramírez y Feliciano"): busco la parada que tenga esas calles
+  const es = p => contiene(p.nombre, nombre) || (!!p.web && contiene(p.web, nombre));
+  const s = S.paradas.find(es);
+  if (s) return { ...base, parada: s.n };
+  // la cabecera del centro figura con el nombre de la parada del otro sentido ("Santa Fe y Laprida")
+  const O = linea.sentidos[sentido === 'ida' ? 'vuelta' : 'ida'];
+  if (O?.paradas.length && es(O.paradas[0])) return { ...base, parada: S.paradas.length, aprox: true };
+  if (O?.paradas.length && es(O.paradas.at(-1))) return { ...base, parada: 1, aprox: true };
+  return base;
+}
+
+/**
+ * De qué línea es una planilla según sus encabezados (cuando la imagen no lo dice).
+ * Devuelve el id de la línea que ubica más columnas en su recorrido, o null si no hay una clara ganadora.
+ */
+export function adivinarLinea(lineas, nombres) {
+  const puntos = lineas.map(l => ({ id: l.id, p: resolverColumnas(l, nombres).reduce((s, c) => s + (c.parada ? (c.aprox ? 0.5 : 1) : 0), 0) })).sort((a, b) => b.p - a.p);
+  return puntos.length && puntos[0].p >= 2 && puntos[0].p > (puntos[1]?.p ?? 0) ? puntos[0].id : null;
 }
 
 /** Arma las columnas (con sentido y parada) a partir de los nombres leídos. */

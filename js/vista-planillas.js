@@ -1,7 +1,7 @@
 // Pestaña "Planillas": ver, editar, cargar a mano o leer desde una foto.
 import { h, dialogo, toast, confirmar, poner } from './ui.js';
 import { E, D, guardar, linea } from './estado.js';
-import { aMin, aHora, filaAMin, validarPlanilla, resolverColumnas, dondeVuelve, NOMBRE_TIPO } from './motor.js';
+import { aMin, aHora, filaAMin, validarPlanilla, resolverColumnas, dondeVuelve, adivinarLinea, NOMBRE_TIPO } from './motor.js';
 import { leerPlanilla } from './lector.js';
 import { leerPlanillaEnTelefono } from './ocr.js';
 
@@ -10,7 +10,7 @@ const tituloDe = (lin, tipo) => `Línea ${lin} · ${{ habil: 'Hábiles', sabado:
 const nuevoId = () => 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
 
 // ---------- editor ----------
-function editor(raiz, original, { nueva = false, foto = null, dudasModelo = [], textos = [], alTerminar }) {
+function editor(raiz, original, { nueva = false, foto = null, dudasModelo = [], textos = [], avisos = [], alTerminar }) {
   const w = structuredClone(original);
   w.anclas = { ...(w.anclas || {}) };
   let txt = w.filas.map(f => w.nombres.map((_, c) => (f[c] == null ? '' : aHora(f[c]))));
@@ -80,6 +80,7 @@ function editor(raiz, original, { nueva = false, foto = null, dudasModelo = [], 
     if (errores) return toast('Corregí las celdas en rojo antes de guardar');
     const filas = mins.filter(f => f.some(x => x != null));
     if (!filas.length) return toast('La planilla no tiene horarios');
+    if (!w.linea) return toast('Elegí de qué línea es la planilla');
     const orden = f => f.find(x => x != null);
     filas.sort((a, b) => orden(a) - orden(b));
     const otra = E.planillas.find(p => p.id !== w.id && p.linea === w.linea && p.tipo === w.tipo);
@@ -99,11 +100,12 @@ function editor(raiz, original, { nueva = false, foto = null, dudasModelo = [], 
     foto && h('details', { class: 'panel', open: true }, h('summary', {}, 'Foto original (comparala con la tabla)'), h('a', { href: foto, target: '_blank' }, h('img', { class: 'foto', src: foto, alt: 'Foto de la planilla' }))),
     h('section', { class: 'panel' },
       h('div', { class: 'dos' },
-        h('label', { class: 'campo' }, 'Línea', h('select', { onchange: e => { w.linea = e.target.value; w.anclas = {}; if (nueva) nombre.value = w.nombre = tituloDe(w.linea, w.tipo); pintarTabla(); } }, D.lineas.map(l => h('option', { value: l.id, selected: l.id === w.linea }, l.nombre)))),
+        h('label', { class: 'campo' }, 'Línea', h('select', { onchange: e => { w.linea = e.target.value; w.anclas = {}; if (nueva) nombre.value = w.nombre = tituloDe(w.linea, w.tipo); pintarTabla(); } }, [w.linea ? null : h('option', { value: '', selected: true }, 'Elegí la línea…'), ...D.lineas.map(l => h('option', { value: l.id, selected: l.id === w.linea }, l.nombre))].filter(Boolean))),
         h('label', { class: 'campo' }, 'Tipo de día', h('select', { onchange: e => { w.tipo = e.target.value; if (nueva) nombre.value = w.nombre = tituloDe(w.linea, w.tipo); } }, TIPOS.map(t => h('option', { value: t, selected: t === w.tipo }, NOMBRE_TIPO[t]))))),
       h('label', { class: 'campo' }, 'Nombre', nombre),
       h('label', { class: 'campo' }, 'Vigencia (opcional)', h('input', { value: w.vigencia || '', placeholder: 'ej. desde 26/05/26', onchange: e => { w.vigencia = e.target.value.trim(); } })),
       h('label', { class: 'campo' }, 'La vuelta empieza en la columna', selVuelta)),
+    avisos.length ? h('div', { class: 'nota ojo' }, h('strong', {}, 'Antes de guardar, revisá:'), h('ul', {}, avisos.map(a => h('li', {}, a)))) : null,
     aviso,
     h('div', { class: 'grilla-scroll' }, tabla),
     h('div', { class: 'fila' },
@@ -149,21 +151,32 @@ async function desdeFotos(raiz, archivos, alTerminar) {
     const decir = t => { estado.textContent = `Foto ${n} de ${total}: ${t}`; };
     decir(conApi ? 'enviando…' : 'preparando…');
     ayuda.textContent = conApi ? 'Leyendo con Anthropic: puede tardar hasta un par de minutos por foto. No cierres la app.'
-      : 'Se lee en este teléfono, sin enviar la foto a ningún lado. Suele tardar menos de un minuto. No cierres la app.';
+      : 'Se lee en este teléfono, sin enviar la foto a ningún lado. Una imagen nítida tarda segundos; una chica o borrosa puede tardar un par de minutos. No cierres la app.';
     try {
-      const r = conApi
-        ? await leerPlanilla(archivo, { apiKey: E.cfg.apiKey, modelo: E.cfg.modelo, alAvanzar: c => decir(`leyendo… (${c} caracteres)`) })
-        : await leerPlanillaEnTelefono(archivo, { alAvanzar: decir });
-      const lin = D.lineas.some(l => l.id === r.linea) ? r.linea : (D.lineas[0]?.id || '6');
-      const tipo = r.tipo || 'habil';
-      const avisos = [
-        r.linea && lin !== r.linea ? `la foto dice línea "${r.linea}", que no está en los recorridos` : '',
-        !r.tipo ? 'no pude saber si es hábil, sábado o domingo: elegilo vos' : '',
-        r.sinFormato.length ? `${r.sinFormato.length} celda(s) no son una hora válida: quedaron en rojo para que las corrijas` : '',
-      ].filter(Boolean);
-      if (avisos.length) toast('Ojo: ' + avisos.join('; '), 7000);
-      editor(raiz, { id: nuevoId(), linea: lin, tipo, nombre: tituloDe(lin, tipo), vigencia: r.vigencia, fuente: 'foto', nombres: r.nombres, vueltaDesde: dondeVuelve(r.nombres), filas: r.filas },
-        { nueva: true, foto: URL.createObjectURL(archivo), dudasModelo: r.dudas, textos: r.sinFormato, alTerminar: siguiente });
+      // una imagen puede traer más de una planilla (por ejemplo sábados y domingos): se revisan de a una
+      const leidas = conApi
+        ? [await leerPlanilla(archivo, { apiKey: E.cfg.apiKey, modelo: E.cfg.modelo, alAvanzar: c => decir(`leyendo… (${c} caracteres)`) })]
+        : await leerPlanillaEnTelefono(archivo, { alAvanzar: decir, nombres: D.lineas.flatMap(l => Object.values(l.sentidos).flatMap(s => s.paradas.flatMap(p => [p.nombre, p.web || '']))) });
+      const revisar = i => {
+        const r = leidas[i];
+        if (!r) return siguiente();
+        // la línea sale del título; si la imagen no la dice, de las paradas de los encabezados
+        const delTitulo = D.lineas.some(l => l.id === r.linea) ? r.linea : '';
+        const lin = delTitulo || adivinarLinea(D.lineas, r.nombres) || '';
+        const avisos = [
+          leidas.length > 1 ? `esta imagen trae ${leidas.length} planillas: esta es la ${i + 1}ª` : '',
+          r.linea && !delTitulo ? `la imagen dice línea "${r.linea}", que no está entre los recorridos` : '',
+          !delTitulo && lin ? `la imagen no dice de qué línea es: por las paradas parece la línea ${lin}` : '',
+          !lin ? 'no pude saber de qué línea es: elegila vos' : '',
+          !r.tipo ? 'no pude saber si es hábil, sábado o domingo: elegí el tipo de día' : '',
+          r.dificil ? 'la imagen es chica o tiene algo encima de los números: revisá las celdas en amarillo contra la foto' : '',
+          r.sinFormato.length ? `${r.sinFormato.length} celda(s) no se pudieron leer: quedaron en rojo para que las completes` : '',
+        ].filter(Boolean);
+        const tipo = r.tipo || 'habil';
+        editor(raiz, { id: nuevoId(), linea: lin, tipo, nombre: lin ? tituloDe(lin, tipo) : 'Planilla nueva', vigencia: r.vigencia, fuente: 'foto', nombres: r.nombres, vueltaDesde: dondeVuelve(r.nombres), filas: r.filas },
+          { nueva: true, foto: URL.createObjectURL(archivo), dudasModelo: r.dudas, textos: r.sinFormato, avisos, alTerminar: () => revisar(i + 1) });
+      };
+      revisar(0);
     } catch (e) {
       poner(raiz, h('section', { class: 'panel' }, h('h2', {}, `No pude leer la foto ${n}`), h('p', { class: 'nota mal' }, e.message || String(e)),
         h('div', { class: 'fila' }, h('button', { class: 'btn', onclick: alTerminar }, 'Volver'),

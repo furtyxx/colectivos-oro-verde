@@ -55,6 +55,7 @@ function audio() {
   return R.audio;
 }
 function bip(frec, dur, cuando = 0, vol = 0.6) {
+  if (!E.cfg.sonido) return; // por defecto los avisos solo vibran
   const c = audio(); if (!c) return;
   const o = c.createOscillator(), g = c.createGain(), t = c.currentTime + cuando;
   o.type = 'square'; o.frequency.value = frec;

@@ -1,7 +1,7 @@
 // Datos que vienen precargados: planillas de la línea 6, lugares y ajustes por defecto.
 import { filaAMin } from './motor.js';
 
-export const VERSION_DATOS = 1;
+export const VERSION_DATOS = 2;
 
 export const TERMINAL = { id: 'terminal', nombre: 'Terminal de Ómnibus de Paraná', lat: -31.739728, lon: -60.517608 };
 export const MI_PARADA = { id: 'casa', nombre: 'Mi parada (Del Castillo y Los Chañares)', lat: -31.82158, lon: -60.51604 };
@@ -15,7 +15,7 @@ export const CFG_DEFECTO = {
   pasoMin: 72,          // metros por minuto caminando
   factorCaminata: 1.4,  // la calle no es línea recta
   gpsPreparate: 1200, gpsTimbre: 450, gpsBajar: 90,
-  lector: 'telefono', apiKey: '', modelo: 'claude-opus-5-5',
+  sonido: false, lector: 'telefono', apiKey: '', modelo: 'claude-opus-5-5',
   // Horarios que conozco de memoria: valen más que la interpolación.
   reglas: [
     { linea: '6', sentido: 'ida', nombre: 'Mi esquina (Del Castillo y Los Chañares)', lat: MI_PARADA.lat, lon: MI_PARADA.lon, punto: 'facultad', mas: 5, nota: 'Mi esquina = salida de Facultad + 5 min' },
@@ -103,7 +103,41 @@ function armar(id, linea, tipo, nombre, vigencia, cols, texto) {
 }
 
 /** Planillas precargadas (las columnas se resuelven contra el recorrido al cargar la app). */
+// Línea 15 (imágenes que pasó el usuario el 15/11/2026; no dicen desde cuándo rigen).
+// "Ramírez y Saraví" (ida) y "Ramírez y Ruiz Moreno" (vuelta) son las dos esquinas de la Terminal.
+const COLS_15 = 'INTA|Escuela Alberdi|Facultad|KM 5 1/2|Ramírez y Feliciano|Ramírez y Saraví|Santa Fe y Laprida||Santa Fe y Laprida|Ramírez y Ruiz Moreno|Ramírez y Feliciano|KM 5 1/2|Facultad|Escuela Alberdi|INTA';
+const HABIL_15 = `
+4:50 - 4:52 5:04 5:18 5:22 5:30 5:30 5:41 5:46 6:08 6:19 - 6:21
+- 5:30 5:32 5:46 6:04 6:09 6:18 6:18 6:19 6:25 6:43 6:47 6:53 -
+6:40 - 6:43 6:58 7:18 7:24 7:34 7:34 7:47 7:51 8:13 8:27 - 8:30
+- 7:43 7:46 8:01 8:21 8:27 8:37 8:37 8:50 8:54 9:16 9:30 9:33 -
+8:45 - 8:48 9:03 9:23 9:29 9:39 9:39 9:52 9:56 10:18 10:32 - 10:35
+- 10:15 10:18 10:33 10:53 10:59 11:09 11:09 11:22 11:26 11:48 12:02 12:05 -
+11:30 - 11:33 11:48 12:08 12:14 12:24 12:24 12:37 12:41 13:03 13:17 - 13:20
+- 12:25 12:28 12:42 13:01 13:07 13:17 13:17 13:30 13:34 13:56 14:10 14:13 -
+13:35 - 13:38 13:52 14:09 14:14 14:22 14:22 14:35 14:39 15:00 15:14 - 15:17
+- 14:50 14:53 15:07 15:25 15:30 15:39 15:39 15:52 15:56 16:17 16:30 16:33 -
+15:30 - 15:33 15:48 16:08 16:14 16:24 16:24 16:37 16:41 17:03 17:17 - 17:20
+- 17:10 17:13 17:28 17:48 17:54 18:04 18:04 18:17 18:21 18:43 18:57 - 19:00
+18:00 - 18:03 18:18 18:38 18:44 18:54 18:54 19:07 19:11 19:33 19:47 19:50 -
+19:15 - 19:18 19:33 19:53 19:59 20:09 20:09 20:22 20:26 20:48 21:01 - 21:03
+- 20:05 20:08 20:22 20:40 20:46 20:55 20:55 21:07 21:11 21:32 21:43 - 21:46
+`;
+const SABADO_15 = `
+5:30 - 5:34 5:47 6:02 6:07 6:17 6:17 6:27 6:31 6:45 6:54 - 6:58
+7:08 - 7:12 7:27 7:43 7:48 7:59 7:59 8:11 8:16 8:31 8:41 8:45 -
+- 9:00 9:04 9:19 9:35 9:40 9:51 9:51 10:03 10:08 10:23 10:33 - 10:37
+10:52 - 10:56 11:11 11:27 11:32 11:43 11:43 11:55 12:00 12:15 12:25 12:29 -
+- 12:44 12:48 13:03 13:19 13:24 13:35 13:35 13:47 13:52 14:07 14:17 - 14:21
+14:36 - 14:40 14:55 15:11 15:16 15:27 15:27 15:39 15:44 15:59 16:09 16:13 -
+- 16:28 16:32 16:47 17:03 17:08 17:19 17:19 17:31 17:36 17:51 18:01 - 18:05
+18:20 - 18:24 18:39 18:55 19:00 19:11 19:11 19:23 19:28 19:43 19:53 19:57 -
+- 20:20 20:24 20:39 20:55 21:00 21:11 21:11 21:23 21:28 21:43 21:53 - 21:57
+`;
+
 export const PRECARGADAS = [
   armar('pre-6-habil', '6', 'habil', 'Línea 6 · Hábiles', 'desde 26/05/26', COLS_HABIL, HABIL),
   armar('pre-6-domingo', '6', 'domingo', 'Línea 6 · Domingo', 'desde agosto 2026', COLS_DOMINGO, DOMINGO),
+  armar('pre-15-habil', '15', 'habil', 'Línea 15 · Hábiles', '', COLS_15, HABIL_15),
+  armar('pre-15-sabado', '15', 'sabado', 'Línea 15 · Sábado', '', COLS_15, SABADO_15),
 ];

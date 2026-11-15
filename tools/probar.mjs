@@ -70,7 +70,11 @@ console.log('Caso pedido: domingo, micro 15:10, margen 20');
   const r = M.planificar({ lineas, planillas, origen: MI_PARADA, destino: TERMINAL, tipo: 'domingo', limite: M.aMin('6:30'), tope: M.aMin('6:50'), cfg });
   ok(!r.recomendado && !r.justo, 'si ninguno llega (micro 6:50 de domingo) no recomienda nada → remis');
   const s = M.planificar({ lineas, planillas, origen: MI_PARADA, destino: TERMINAL, tipo: 'sabado', limite: 900, cfg });
-  ok(!s.recomendado && s.sinPlanilla.length > 0, 'sábado: sin planilla');
+  const v = s.recomendado;
+  console.log(`    sábado, llegar 15:00: línea ${v?.op.linea.id}, sale ${v && h(v.salida.t)} de ${v?.salida.nombre}, pasa ${v && h(v.tSube)} por ${v?.op.sube.nombre}, baja ${v && h(v.tBaja)} en ${v?.op.baja.nombre}, llega ${v && h(v.tLlega)}`);
+  ok(v && v.op.linea.id === '15' && /Ruiz Moreno/.test(v.op.baja.nombre) && v.op.minDestino <= 3 && v.tLlega <= 900, 'sábado: usa la planilla de la línea 15 y deja a 2 min de la terminal');
+  ok(h(v.tBaja) === '14:14' || (v.tBaja > v.tSube && v.tBaja - v.tSube < 40), 'sábado: tiempos de la 15 razonables');
+  ok(s.sinPlanilla.some(o => o.linea.id === '6'), 'sábado: avisa que la línea 6 no tiene planilla de sábado');
 }
 
 console.log('Servicios que salen de Esc. Alberdi (hábiles 7:00 y 7:20)');
@@ -147,6 +151,47 @@ console.log('Lector de fotos en el teléfono (palabras reconocidas de las dos pl
     const tres = comparar(t2, ref);
     console.log(`    relector tramposo ("1:11" en todas las vacías): ${tres.sobra} celdas inventadas de ${ref.filas.flat().filter(x => x == null).length} vacías, todas marcadas en amarillo`);
     ok(tres.sobra <= 5 && tres.mal === 0 && tres.r.dudas.length >= tres.sobra, `${archivo}: el control de orden frena casi todo lo inventado y lo que pasa queda en duda`);
+  }
+  // ---- otros formatos: línea 15 (título sin "LÍNEA", horas con cero adelante, imagen chica con marca de agua) ----
+  const vocabulario = T.vocabularioDe(lineas.flatMap(l => Object.values(l.sentidos).flatMap(s => s.paradas.flatMap(p => [p.nombre, p.web || '']))));
+  const marcadas = r => new Set([...r.dudas, ...r.sinFormato].map(d => d.fila + ',' + d.columna).concat([...M.validarPlanilla(r.filas).keys()]));
+  const medir = (tabla, ref) => {
+    const { r, bien, mal, falta, sobra } = comparar(tabla, ref), m = marcadas(r);
+    let sinAviso = 0;
+    for (let f = 0; f < ref.filas.length; f++) for (let c = 0; c < ref.nombres.length; c++) if ((r.filas[f]?.[c] ?? null) !== (ref.filas[f][c] ?? null) && !m.has(f + ',' + c)) sinAviso++;
+    return { r, bien, mal, falta, sobra, sinAviso, avisos: m.size };
+  };
+  {
+    const ref = PRECARGADAS.find(p => p.id === 'pre-15-habil'), total = ref.filas.flat().filter(x => x != null).length;
+    const tabla = T.armarTabla(JSON.parse(fs.readFileSync(path.join(raiz, 'tools/muestras/palabras-l15-habiles.json'), 'utf8')), { vocabulario });
+    const x = medir(tabla, ref);
+    console.log(`    línea 15 hábiles (imagen nítida, una lectura): ${x.bien} de ${total} bien; título "${tabla.titulo}"; columnas: ${tabla.nombres.join(' | ')}`);
+    ok(x.bien === total && x.mal + x.falta + x.sobra === 0, 'línea 15 hábiles: los 180 horarios, con horas escritas "04:50"');
+    ok(tabla.tipo === 'habil' && tabla.linea === '' && M.adivinarLinea(lineas, tabla.nombres) === '15', 'línea 15 hábiles: el título no dice la línea y se deduce de las paradas');
+    const cols = M.resolverColumnas(L('15'), tabla.nombres);
+    ok(M.dondeVuelve(tabla.nombres) === 7 && cols.map(c => c.parada || 0).join(',') === '0,4,5,0,43,46,52,1,8,11,0,49,50,0', 'línea 15 hábiles: cada columna en su parada (Ramírez y Saraví / Ruiz Moreno = Terminal)');
+  }
+  {
+    const ref = PRECARGADAS.find(p => p.id === 'pre-15-sabado'), total = ref.filas.flat().filter(x => x != null).length;
+    const pasadas = JSON.parse(fs.readFileSync(path.join(raiz, 'tools/muestras/pasadas-l15-sabado.json'), 'utf8'));
+    const tabla = T.armarTabla(pasadas, { vocabulario });
+    const x = medir(tabla, ref);
+    console.log(`    línea 15 sábados (imagen de 720 px con marca de agua, ${pasadas.length} lecturas): ${x.bien} de ${total} bien, ${x.mal} mal, ${x.falta} sin leer; marcadas para revisar ${x.avisos}; mal sin marcar ${x.sinAviso}`);
+    console.log(`    columnas: ${tabla.nombres.join(' | ')}`);
+    ok(tabla.linea === '15' && tabla.tipo === 'sabado' && tabla.celdas.length === 9 && tabla.nombres.length === 14, 'línea 15 sábados: línea, tipo de día y forma de la tabla');
+    ok(x.bien >= 100 && x.sobra === 0, 'línea 15 sábados: al menos 100 de 108 horarios bien');
+    ok(x.sinAviso === 0, 'línea 15 sábados: ningún horario mal queda sin marcar');
+    ok(M.dondeVuelve(tabla.nombres) === 7 && M.resolverColumnas(L('15'), tabla.nombres).map(c => c.parada || 0).join(',') === '0,4,5,0,43,46,52,1,8,11,0,49,50,0', 'línea 15 sábados: cada columna en su parada');
+    const una = medir(T.armarTabla(pasadas[0], { vocabulario }), ref);
+    console.log(`    (la misma imagen con una sola lectura: ${una.bien} bien, ${una.mal} mal)`);
+  }
+  {
+    // dos planillas en una imagen: la segunda desplazada hacia abajo, con su propio título
+    const una = JSON.parse(fs.readFileSync(path.join(raiz, 'tools/muestras/palabras-domingo.json'), 'utf8'));
+    const altoImg = Math.max(...una.map(p => p.y1)) + 60;
+    const dos = [...una, ...una.map(p => ({ ...p, t: p.t === 'DOMINGO' ? 'SÁBADOS' : p.t, y0: p.y0 + altoImg, y1: p.y1 + altoImg }))];
+    const ts = T.armarTablas(dos);
+    ok(ts.length === 2 && ts[0].tipo === 'domingo' && ts[1].tipo === 'sabado' && ts.every(t => t.celdas.length === 17 && t.nombres.length === 14), 'una imagen con dos planillas (domingo y sábados) se separa en dos');
   }
   let tiro = false; try { T.armarTabla([{ t: 'hola', c: 90, x0: 0, y0: 0, x1: 10, y1: 10 }]); } catch { tiro = true; }
   ok(tiro, 'una imagen sin tabla de horarios da error en vez de una planilla vacía');

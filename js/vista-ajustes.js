@@ -33,8 +33,9 @@ export function vistaAjustes(raiz) {
       num('gpsPreparate', '"Preparate" a … metros de la parada', 300, 5000),
       num('gpsTimbre', '"Tocá el timbre" a … metros', 150, 2000),
       num('gpsBajar', '"Bajate acá" a … metros', 30, 400),
-      h('button', { class: 'btn', onclick: probarSonido }, '🔊 Probar sonido y vibración'),
-      h('p', { class: 'suave chico' }, 'Para que suene, el teléfono no tiene que estar en silencio y la app tiene que quedar abierta en pantalla (se mantiene prendida sola).')),
+      h('label', { class: 'fila' }, h('input', { type: 'checkbox', checked: !!c.sonido, onchange: e => { c.sonido = e.target.checked; guardar(); } }), h('span', {}, 'Además de vibrar, hacer sonido')),
+      h('button', { class: 'btn', onclick: probarSonido }, '📳 Probar el aviso'),
+      h('p', { class: 'suave chico' }, 'Los avisos solo vibran, sin sonido. Para que vibre, la app tiene que quedar abierta en pantalla (se mantiene prendida sola) y el teléfono no puede estar en "No molestar" sin vibración.')),
 
     h('section', { class: 'panel' }, h('h2', {}, 'Mis lugares'),
       h('ul', { class: 'lista' }, E.lugares.map(l => h('li', {}, h('div', { class: 'fila', style: 'padding:6px 0' },
@@ -66,7 +67,7 @@ export function vistaAjustes(raiz) {
       h('p', { class: 'suave chico' }, `Recorridos: ${D.lineas.length} líneas de Paraná Online (${D.lineas.map(l => l.id).join(', ')}). Calles: © colaboradores de OpenStreetMap. Lectura de fotos: Tesseract.js (Apache 2.0). Paraná Online y ERSA no tienen relación con esta app.`),
       h('div', { class: 'fila' },
         h('button', { class: 'btn mini', onclick: async () => {
-          if (!(await confirmar('¿Volver a poner las planillas precargadas de la línea 6 (hábiles y domingo) como vinieron? Se pierden los cambios que les hayas hecho.', 'Restaurar'))) return;
+          if (!(await confirmar('¿Volver a poner las planillas precargadas (líneas 6 y 15) como vinieron? Se pierden los cambios que les hayas hecho.', 'Restaurar'))) return;
           E.planillas = E.planillas.filter(p => !PRECARGADAS.some(x => x.id === p.id || (p.linea === x.linea && p.tipo === x.tipo)));
           E.planillas.push(...structuredClone(PRECARGADAS)); E.borradas = []; guardar(); toast('Planillas restauradas');
         } }, 'Restaurar planillas precargadas'),
