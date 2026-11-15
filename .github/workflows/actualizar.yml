@@ -25,9 +25,11 @@ jobs:
           node-version: 22
       - name: Leer Paraná Online
         run: node tools/actualizar.mjs
+      - name: Rearmar los servicios con los recorridos nuevos
+        run: node tools/horarios.mjs --solo
       - name: Guardar si hubo cambios
         run: |
           git config user.name "actualizador-automatico"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/lineas.json data/cambios.json
-          git diff --cached --quiet || (git commit -m "Datos: revisión automática de recorridos" && git push)
+          git add data/lineas.json data/cambios.json data/horarios.json
+          git diff --cached --quiet || (git commit -m "Datos: revisión automática de recorridos" && git pull --rebase && git push)

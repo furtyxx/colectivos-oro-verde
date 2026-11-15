@@ -1,7 +1,7 @@
 // Pestaña "Planear": de dónde a dónde, a qué hora, y qué colectivo conviene.
 import { h, toast, fmtM, hoyISO, ahoraMin, fechaLinda, poner } from './ui.js';
 import { E, D, guardar, lugar, planillasListas, recordarLugar, cuandoLlega } from './estado.js';
-import { planificar, opcionesDeViaje, tipoDeDia, aMin, aHora, NOMBRE_TIPO } from './motor.js';
+import { planificar, opcionesDeViaje, tipoDeDia, aMin, aHora, coberturaDe, NOMBRE_TIPO } from './motor.js';
 import { abrirBuscador, miUbicacion } from './buscador.js';
 import { iniciarViaje } from './vista-vivo.js';
 
@@ -45,10 +45,11 @@ function tarjeta(v, clase, etiqueta, ctx) {
   ];
   return h('article', { class: 'viaje ' + clase },
     h('div', { class: 'cab' }, h('span', { class: 'etq' }, etiqueta), h('span', { class: 'lin' }, L.nombre), h('span', { class: 'suave chico' }, v.op.desc)),
-    h('div', {}, h('div', { class: 'grande-hora' }, aHora(v.salida.t)), h('div', { class: 'suave' }, 'sale de ' + v.salida.nombre)),
+    h('div', {}, h('div', { class: 'grande-hora' }, aHora(v.salida.t)), h('div', { class: 'suave' }, v.salida.enParada ? 'pasa por tu parada' : 'sale de ' + v.salida.nombre)),
     h('ul', { class: 'pasos' }, pasos),
     v.dudoso && h('p', { class: 'nota ojo chico' }, 'Este servicio sale de otra cabecera: no está confirmado que pase por tu parada ni a qué hora exacta.'),
-    (!v.subeExacto || !v.bajaExacto) && h('p', { class: 'suave chico' }, '~ = hora estimada entre dos puntos de la planilla.'),
+    (!v.subeExacto || !v.bajaExacto) && h('p', { class: 'suave chico' }, `~ = hora estimada entre dos puntos ${v.fuente === 'sitio' ? 'de los horarios de Paraná Online' : 'de la planilla'}.`),
+    h('p', { class: 'chico ' + (v.fuente === 'sitio' ? 'bien-txt' : 'ojo-txt') }, v.fuente === 'sitio' ? '✓ Horario publicado por Paraná Online' : '≈ Estimado con la planilla: todavía no tengo el horario de Paraná Online para este tramo'),
     h('button', { class: 'btn pri', onclick: () => iniciarViaje(v, ctx) }, 'Iniciar este viaje'));
 }
 
@@ -56,9 +57,8 @@ function avisoSinPlanilla(op, tipo) {
   const L = op.linea;
   return h('div', { class: 'nota' },
     h('strong', {}, `${L.nombre} también te sirve`), ` (${op.desc}): subís en ${op.sube.nombre}` + (op.minOrigen ? ` (a ${fmtM(op.mOrigen)})` : '') +
-    `, bajás en ${op.baja.nombre}, a ${fmtM(op.mDestino)} del destino (${op.minDestino || 1} min a pie). No tengo planilla de ${NOMBRE_TIPO[tipo]} de esa línea.`,
+    `, bajás en ${op.baja.nombre}, a ${fmtM(op.mDestino)} del destino (${op.minDestino || 1} min a pie). Todavía no tengo los horarios de ${NOMBRE_TIPO[tipo]} de esa línea (se van sumando solos).`,
     h('div', { class: 'fila', style: 'margin-top:8px' },
-      h('a', { class: 'btn mini', href: '#planillas' }, 'Cargar planilla'),
       h('a', { class: 'btn mini', href: L.url, target: '_blank', rel: 'noopener' }, 'Paraná Online'),
       h('a', { class: 'btn mini', href: cuandoLlega, target: '_blank', rel: 'noopener' }, 'Cuándo llega')));
 }
@@ -77,7 +77,7 @@ function bloque(res, ctx) {
   }
   const [primera, ...resto] = res.sinPlanilla;
   if (primera) out.push(avisoSinPlanilla(primera, res.tipo));
-  if (resto.length) out.push(h('details', {}, h('summary', { class: 'suave' }, `Otras ${resto.length} línea(s) que pasan cerca, sin planilla cargada`),
+  if (resto.length) out.push(h('details', {}, h('summary', { class: 'suave' }, `Otras ${resto.length} línea(s) que pasan cerca, todavía sin horarios`),
     h('div', { style: 'display:grid;gap:8px' }, resto.map(op => avisoSinPlanilla(op, res.tipo)))));
   return out;
 }
@@ -115,7 +115,7 @@ export function vistaPlanear(raiz) {
   const micro = P.modo === 'llegar' ? aMin(P.hora) : null;
   if (P.modo === 'llegar' && micro == null) { salida.append(h('p', { class: 'nota' }, 'Poné a qué hora sale tu micro (o a qué hora tenés que estar) y te digo qué colectivo tomar.')); return; }
 
-  const planillas = planillasListas();
+  const planillas = planillasListas(), horarios = D.horarios?.lineas || null;
   const opciones = opcionesDeViaje(D.lineas, origen, destino, E.cfg);
   if (!opciones.length) {
     salida.append(h('div', { class: 'nota mal' }, h('strong', {}, 'Ninguna línea une esos dos puntos sin trasbordo. '),
@@ -124,10 +124,11 @@ export function vistaPlanear(raiz) {
   }
   const auto = tipoAuto(P.fecha);
   const principal = P.tipo === 'auto' ? auto.tipo : P.tipo;
-  const conPlanilla = TIPOS.filter(t => planillas.some(p => p.tipo === t && opciones.some(o => o.linea.id === p.linea)));
+  // tipos de día con algún horario: del sitio, o de las planillas si está permitido usarlas
+  const conPlanilla = TIPOS.filter(t => opciones.some(o => horarios?.[o.linea.id]?.[t] || (E.cfg.usarPlanillas !== false && planillas.some(p => p.tipo === t && p.linea === o.linea.id))));
   const hoy = P.fecha === hoyISO();
   const ctx = { modo: P.modo, micro, destino, origen, fecha: P.fecha };
-  const calc = tipo => planificar({ lineas: D.lineas, planillas, origen, destino, tipo, cfg: E.cfg,
+  const calc = tipo => planificar({ lineas: D.lineas, planillas, horarios, origen, destino, tipo, cfg: E.cfg,
     ...(P.modo === 'llegar' ? { limite: micro - P.margen, tope: micro } : { desde: aMin(P.hora) ?? (hoy ? ahoraMin() : 0) }) });
 
   salida.append(h('p', { class: 'suave' }, `${fechaLinda(P.fecha)}: ` + (P.tipo === 'auto' ? `tomo horario ${NOMBRE_TIPO[auto.tipo]} porque ${auto.motivo}.` : `elegiste horario ${NOMBRE_TIPO[principal]}.`) +
@@ -136,8 +137,8 @@ export function vistaPlanear(raiz) {
   if (conPlanilla.includes(principal)) {
     salida.append(h('h2', { class: 'sec' }, `Con horario ${NOMBRE_TIPO[principal]}`), ...bloque(calc(principal), ctx));
   } else {
-    salida.append(h('div', { class: 'nota ojo' }, h('strong', {}, `No tengo planilla de ${NOMBRE_TIPO[principal]}. `),
-      conPlanilla.length ? 'Te muestro las opciones con las planillas que sí hay; fijate cuál está corriendo.' : 'Cargá una en la pestaña Planillas.'),
+    salida.append(h('div', { class: 'nota ojo' }, h('strong', {}, `Todavía no tengo horarios de ${NOMBRE_TIPO[principal]} para estas líneas. `),
+      conPlanilla.length ? 'Te muestro las opciones con los otros tipos de día; fijate cuál está corriendo.' : 'Los voy juntando solos de Paraná Online: en unos días van a estar completos.'),
     ...(conPlanilla.length ? [] : calc(principal).sinPlanilla.map(op => avisoSinPlanilla(op, principal))));
   }
   for (const t of conPlanilla.filter(t => t !== principal)) {

@@ -38,3 +38,20 @@ Esta app no tiene relación con ERSA ni con Paraná Online. Los horarios depende
 - `js/tabla.js` arma la tabla con las palabras reconocidas: agrupa los horarios en filas y columnas, toma los encabezados como nombres de parada, lee del título la línea, el tipo de día y la vigencia, y vuelve a mirar de cerca las celdas vacías o dudosas.
 - `node tools/probar.mjs` lo prueba con lo reconocido de las dos planillas reales de la línea 6 (`tools/muestras/`): 516 y 215 horarios, todos iguales a la transcripción revisada a mano.
 - Anda bien con la imagen original de la planilla. Con una foto torcida, con sombras o sacada a una pantalla puede fallar: las celdas dudosas quedan en amarillo y las ilegibles en rojo.
+
+## Horarios: de dónde salen
+
+- **Paraná Online (principal).** Cada media hora una tarea de GitHub (`.github/workflows/horarios.yml`, `tools/horarios.mjs`) lee en cada línea los colectivos que anuncia cada parada y los suma a `data/horarios/crudo/`. Con eso arma, en `data/horarios.json`, los servicios completos de cada línea y tipo de día (hábil, sábado, domingo).
+  - Líneas **urbanas (A a S)**: la página trae el día completo, así que están completas desde la primera lectura.
+  - Líneas **interurbanas** (Oro Verde, San Benito, Colonia Avellaneda…): el sitio solo muestra lo que pasa en las próximas ~2 horas, por eso el horario se va completando con las lecturas; un tipo de día queda completo cuando se leyó durante todo un día de ese tipo.
+- **Planillas (de apoyo).** Las imágenes de las planillas oficiales quedan guardadas para consulta en la pestaña Planillas. Se usan para estimar un viaje solo donde Paraná Online todavía no tiene el horario (se puede apagar en Ajustes) y el viaje queda marcado como estimado.
+- `tools/actualizar.mjs` (cada día): recorridos y paradas de las 9 líneas interurbanas y las 13 urbanas. `--lineas=a,f,6` lee solo algunas.
+
+## En viaje
+
+- El GPS marca por dónde vas sobre el recorrido (parada actual, próxima y cuánto falta para bajar) apenas abrís "En viaje".
+- Los avisos de bajada son un recuadro chico arriba de la pantalla, con vibración; si la app no está a la vista se mandan como notificación. Android pausa el GPS de las apps que no están visibles: para que el aviso por distancia sea confiable, la app tiene que estar abierta (sirve ventana flotante o pantalla dividida).
+
+## Buscar lugares
+
+Esquinas y paradas (sin conexión), OpenStreetMap y, con una clave de Google (Places API New) cargada en Ajustes, Google Maps. Desde Google Maps también se puede usar Compartir → Cole OV (`share_target` del manifest).

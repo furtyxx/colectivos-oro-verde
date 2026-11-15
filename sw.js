@@ -1,7 +1,7 @@
 // Service worker: deja la app y los datos disponibles sin conexión.
 // Estrategia: se responde desde la copia guardada y, si hay red, se actualiza en segundo plano
 // (la próxima vez que abras la app ves lo nuevo). Los datos de recorridos van primero por red.
-const CACHE = 'colectivos-ov-v2';
+const CACHE = 'colectivos-ov-v4';
 const BASE = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/ui.js', 'js/estado.js', 'js/datos.js', 'js/motor.js', 'js/buscador.js', 'js/lector.js', 'js/ocr.js', 'js/tabla.js',
@@ -25,7 +25,7 @@ self.addEventListener('fetch', e => {
     if (r.ok) { const copia = r.clone(); caches.open(CACHE).then(c => c.put(req, copia)); }
     return r;
   });
-  if (/\/data\/(lineas|cambios)\.json$/.test(url.pathname)) {
+  if (/\/data\/(lineas|cambios|horarios)\.json$/.test(url.pathname)) {
     // recorridos: lo más nuevo si hay conexión, si no lo guardado
     e.respondWith(deRed().catch(() => caches.match(req, { ignoreSearch: true })));
     return;
@@ -34,5 +34,14 @@ self.addEventListener('fetch', e => {
     const red = deRed().catch(() => guardado);
     if (guardado) { e.waitUntil(red); return guardado; }
     return red;
+  }));
+});
+
+// Tocar un aviso (por ejemplo "Tocá el timbre") abre o trae al frente la app.
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(cs => {
+    const abierta = cs.find(c => 'focus' in c);
+    return abierta ? abierta.focus() : self.clients.openWindow('./#vivo');
   }));
 });

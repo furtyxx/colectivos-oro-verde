@@ -215,6 +215,24 @@ export function horaEn(anclas, m) {
   return null;
 }
 
+/**
+ * Dónde está un punto respecto de un recorrido (lista de [lat, lon]):
+ * m = metros desde el comienzo del recorrido hasta el punto más cercano; fuera = a cuántos metros del recorrido está.
+ */
+export function proyectar(pts, p) {
+  const k = Math.cos(p.lat * Math.PI / 180), R = 111195;
+  const X = lo => lo * k * R, Y = la => la * R;
+  let acum = 0, mejor = null;
+  for (let i = 1; i < pts.length; i++) {
+    const ax = X(pts[i - 1][1]), ay = Y(pts[i - 1][0]), bx = X(pts[i][1]), by = Y(pts[i][0]), dx = bx - ax, dy = by - ay, l2 = dx * dx + dy * dy, l = Math.sqrt(l2);
+    const t = l2 ? Math.max(0, Math.min(1, ((X(p.lon) - ax) * dx + (Y(p.lat) - ay) * dy) / l2)) : 0;
+    const d = Math.hypot(X(p.lon) - (ax + t * dx), Y(p.lat) - (ay + t * dy));
+    if (!mejor || d < mejor.fuera) mejor = { m: acum + t * l, fuera: d };
+    acum += l;
+  }
+  return mejor;
+}
+
 // ---------- planificador ----------
 export const minCaminata = (metros, cfg) => metros < 40 ? 0 : Math.max(1, Math.round(metros * cfg.factorCaminata / cfg.pasoMin));
 
@@ -265,19 +283,64 @@ export function viajesDeOpcion(op, pl, cfg) {
   return out.sort((a, b) => a.tSube - b.tSube);
 }
 
+/** Qué parte del día (0 a 1) tienen cargada los horarios por parada de una línea. */
+export const coberturaDe = T => (T ? [...(T.franjas || '')].filter(c => c === '1').length / 48 : 0);
+
+/**
+ * Servicios de una opción armados con los horarios por parada que publica Paraná Online (data/horarios.json).
+ * Cada fila de un bloque es un colectivo con la hora a la que pasa por varias paradas; la hora en la parada
+ * de subida y en la de bajada es exacta si figura en la fila y, si no, se estima entre las paradas vecinas.
+ */
+export function viajesDeBloques(op, T, cfg) {
+  const out = [], S = op.linea.sentidos[op.sentido], LIM = 1500; // hasta 1,5 km se extrapola fuera de lo que muestra el sitio
+  for (const b of T.bloques || []) {
+    if (b.sentido !== op.sentido || !op.ramales.includes(b.ramal)) continue;
+    const ri = b.ramal, ms = op.sube.m[ri], mb = op.baja.m[ri];
+    if (ms == null || mb == null) continue;
+    for (let fi = 0; fi < b.filas.length; fi++) {
+      const anclas = [];
+      b.filas[fi].forEach((t, k) => {
+        if (t == null) return;
+        const s = S.paradas[b.paradas[k] - 1], m = s?.m[ri];
+        if (m != null) anclas.push({ m, t, nombre: s.nombre });
+      });
+      anclas.sort((a, c) => a.m - c.m);
+      if (anclas.length < 2) continue;
+      if (ms < anclas[0].m - LIM || mb > anclas.at(-1).m + LIM) continue;
+      const hs = horaEn(anclas, ms), hb = horaEn(anclas, mb);
+      if (!hs || !hb) continue;
+      const tSube = Math.floor(hs.t + 1e-6), tBaja = Math.max(tSube + 1, Math.ceil(hb.t - 1e-6));
+      if (out.some(v => v.op === op && Math.abs(v.tSube - tSube) <= 1 && Math.abs(v.tBaja - tBaja) <= 1)) continue; // el mismo colectivo visto dos veces
+      out.push({
+        op, fuente: 'sitio', fila: fi, tSube, tBaja,
+        tParada: tSube - cfg.adelanto, tSalir: tSube - cfg.adelanto - op.minOrigen, tLlega: tBaja + op.minDestino,
+        subeExacto: hs.exacto, bajaExacto: hb.exacto, dudoso: false,
+        salida: { nombre: op.sube.nombre, t: tSube, enParada: true },
+        refs: anclas.filter(a => a.m > ms + 100 && a.m < mb - 100).map(a => ({ nombre: a.nombre, t: a.t })),
+      });
+    }
+  }
+  return out.sort((a, b) => a.tSube - b.tSube);
+}
+
 /**
  * Planifica un viaje para un tipo de día.
  *   modo llegada: { limite, tope }  -> limite = hora a la que querés estar; tope = hora en que ya es tarde (sale el micro)
  *   modo salida:  { desde }         -> próximos servicios a partir de esa hora
  */
-export function planificar({ lineas, planillas, origen, destino, tipo, limite = null, tope = null, desde = null, cfg }) {
+export function planificar({ lineas, planillas = [], horarios = null, origen, destino, tipo, limite = null, tope = null, desde = null, cfg }) {
   const opciones = opcionesDeViaje(lineas, origen, destino, cfg);
   const viajes = [], sinPlanilla = [];
   for (const op of opciones) {
-    const pls = planillas.filter(p => p.linea === op.linea.id && p.tipo === tipo);
-    const antes = viajes.length;
-    for (const pl of pls) viajes.push(...viajesDeOpcion(op, pl, cfg));
-    if (viajes.length === antes) sinPlanilla.push(op);
+    // 1º los horarios que publica Paraná Online; las planillas solo completan lo que el sitio todavía no tiene
+    const T = horarios?.[op.linea.id]?.[tipo];
+    const delSitio = T ? viajesDeBloques(op, T, cfg) : [];
+    let deLaPlanilla = [];
+    if (cfg.usarPlanillas !== false && coberturaDe(T) < 0.85)
+      for (const pl of planillas.filter(p => p.linea === op.linea.id && p.tipo === tipo)) deLaPlanilla.push(...viajesDeOpcion(op, pl, cfg).map(v => ({ ...v, fuente: 'planilla' })));
+    deLaPlanilla = deLaPlanilla.filter(v => !delSitio.some(s => Math.abs(s.tSube - v.tSube) <= 4));
+    const todos = [...delSitio, ...deLaPlanilla];
+    if (todos.length) viajes.push(...todos); else sinPlanilla.push(op);
   }
   viajes.sort((a, b) => a.tSube - b.tSube || a.tLlega - b.tLlega);
   const res = { tipo, opciones, sinPlanilla, viajes, recomendado: null, anterior: null, justo: null, proximos: [] };
@@ -288,7 +351,10 @@ export function planificar({ lineas, planillas, origen, destino, tipo, limite = 
     const hasta = tope ?? limite;
     res.justo = viajes.find(v => v.tLlega > limite && v.tLlega <= hasta - 2 && (!res.recomendado || v.tSube > res.recomendado.tSube)) || null;
   } else if (desde != null) {
-    res.proximos = viajes.filter(v => v.tSube >= desde).slice(0, 4);
+    // el próximo es el que antes te deja en destino; como mucho dos por línea para no llenar la lista con la misma
+    const porLinea = {};
+    res.proximos = viajes.filter(v => v.tSube >= desde).sort((a, b) => a.tLlega - b.tLlega || a.tSube - b.tSube)
+      .filter(v => (porLinea[v.op.linea.id] = (porLinea[v.op.linea.id] || 0) + 1) <= 2).slice(0, 5);
     res.recomendado = res.proximos[0] || null;
   }
   return res;

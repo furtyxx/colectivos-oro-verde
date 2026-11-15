@@ -197,5 +197,53 @@ console.log('Lector de fotos en el teléfono (palabras reconocidas de las dos pl
   ok(tiro, 'una imagen sin tabla de horarios da error en vez de una planilla vacía');
 }
 
+console.log('Horarios por parada de Paraná Online (todas las líneas)');
+{
+  // bloque de ejemplo armado con las paradas reales de una línea: 2 colectivos a ~20 km/h
+  const armarBloque = (L, sentido, tipos, salidas, filtro = () => true) => {
+    const S = L.sentidos[sentido], ps = S.paradas.filter((p, i) => p.m[0] != null && i % 4 === 0 && filtro(p));
+    const filas = salidas.map(t0 => ps.map(p => Math.round(t0 + p.m[0] / 330)));
+    return { sentido, ramal: 0, cartel: '', paradas: ps.map(p => p.n), filas, ps };
+  };
+  const completo = { franjas: '1'.repeat(48) };
+  const L6 = L('6'), b6 = armarBloque(L6, 'ida', null, [M.aMin('16:00'), M.aMin('17:00')]);
+  const horarios = { 6: { domingo: { franjas: '0'.repeat(45) + '111', bloques: [{ ...b6 }] } } };
+  const cfg0 = { ...cfg, usarPlanillas: false };
+  const solo = M.planificar({ lineas, planillas, horarios, origen: MI_PARADA, destino: TERMINAL, tipo: 'domingo', desde: M.aMin('15:00'), cfg: cfg0 });
+  const v6 = solo.viajes.filter(v => v.op.linea.id === '6');
+  console.log(`    línea 6 con horarios del sitio: ${v6.map(v => h(v.tSube) + '→' + h(v.tBaja)).join(', ')}`);
+  ok(v6.length === 2 && v6.every(v => v.fuente === 'sitio' && v.salida.enParada), 'los dos colectivos del sitio aparecen, marcados como "sitio"');
+  ok(v6[1].tSube - v6[0].tSube === 60 && v6[0].tBaja > v6[0].tSube + 15, 'la hora en mi parada se acomoda entre las paradas que sí tienen horario (misma separación que las salidas)');
+  ok(!solo.viajes.some(v => v.fuente === 'planilla'), 'sin permiso de planillas no usa planillas');
+  const mezcla = M.planificar({ lineas, planillas, horarios, origen: MI_PARADA, destino: TERMINAL, tipo: 'domingo', desde: M.aMin('15:00'), cfg: { ...cfg, usarPlanillas: true } });
+  const dups = mezcla.viajes.filter(v => v.op.linea.id === '6' && v.fuente === 'planilla').filter(p => v6.some(s => Math.abs(s.tSube - p.tSube) <= 4));
+  ok(mezcla.viajes.some(v => v.fuente === 'planilla') && dups.length === 0, 'las planillas completan lo que falta y no duplican lo que el sitio ya confirma');
+  const full = M.planificar({ lineas, planillas, horarios: { 6: { domingo: { ...completo, bloques: [b6] } } }, origen: MI_PARADA, destino: TERMINAL, tipo: 'domingo', desde: M.aMin('15:00'), cfg: { ...cfg, usarPlanillas: true } });
+  ok(!full.viajes.some(v => v.op.linea.id === '6' && v.fuente === 'planilla'), 'con el día completo en el sitio, ya no se usan las planillas');
+  ok(M.coberturaDe(horarios[6].domingo) === 3 / 48 && M.coberturaDe(undefined) === 0, 'cobertura del día: 3 de 48 franjas');
+
+  // línea urbana (sentidos con el número de servicio), día completo
+  const LA = L('A'), sentA = Object.keys(LA.sentidos)[0], SA = LA.sentidos[sentA];
+  const bA = armarBloque(LA, sentA, null, [M.aMin('7:00'), M.aMin('9:00'), M.aMin('11:00')]);
+  const ini = SA.paradas.find(p => p.n === bA.paradas[1]), fin = SA.paradas.find(p => p.n === bA.paradas.at(-2));
+  const rA = M.planificar({ lineas, planillas: [], horarios: { A: { domingo: { ...completo, bloques: [bA] } } }, origen: ini, destino: fin, tipo: 'domingo', desde: M.aMin('8:30'), cfg: cfg0 });
+  const vA = rA.proximos.find(v => v.op.linea.id === 'A');
+  console.log(`    línea urbana A (${SA.desc}): ${vA ? `pasa ${h(vA.tSube)}, baja ${h(vA.tBaja)} en ${vA.op.baja.nombre}` : 'sin viajes'}`);
+  ok(vA && vA.fuente === 'sitio' && vA.tSube >= M.aMin('9:00') && vA.tSube < M.aMin('9:20') && vA.op.sentido === sentA, 'una línea urbana funciona igual: el colectivo de las 9:00 pasa por la parada de subida a esa hora más lo que tarda en llegar');
+  ok(rA.proximos.length <= 5 && Object.values(rA.proximos.reduce((a, v) => (a[v.op.linea.id] = (a[v.op.linea.id] || 0) + 1, a), {})).every(n => n <= 2), 'en "salir" muestra como mucho dos servicios por línea');
+  ok(rA.proximos.every((v, i, a) => !i || a[i - 1].tLlega <= v.tLlega), '"salir" ordena por la hora de llegada, no por la de salida');
+  ok(D_LINEAS_URBANAS(lineas) >= 10, 'hay al menos 10 líneas urbanas con recorrido');
+}
+function D_LINEAS_URBANAS(ls) { return ls.filter(l => l.tipo === 'urbana' && Object.values(l.sentidos).every(s => s.paradas.length >= 3 && s.paradas.every(p => p.m[0] != null))).length; }
+
+console.log('Dónde voy en el recorrido (GPS)');
+{
+  const S = L('6').sentidos.ida, pts = S.ramales[0].pts, a = S.paradas[10], b = S.paradas[30];
+  const pa = M.proyectar(pts, a), pb = M.proyectar(pts, b);
+  ok(pa.fuera < 70 && pb.fuera < 70 && pb.m > pa.m + 1000, `una parada cae sobre el recorrido (a ${Math.round(pa.fuera)} m) y la siguiente va más adelante (${Math.round(pb.m - pa.m)} m)`);
+  const lejos = M.proyectar(pts, { lat: a.lat, lon: a.lon - 0.3 });
+  ok(lejos.fuera > 20000, 'un punto a 28 km del recorrido figura como "fuera"');
+}
+
 console.log(fallas ? `\n${fallas} PRUEBA(S) FALLARON` : '\nTodo OK');
 process.exit(fallas ? 1 : 0);

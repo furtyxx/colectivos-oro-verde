@@ -216,7 +216,8 @@ export function vistaPlanillas(raiz) {
 
   poner(raiz, 
     h('section', { class: 'panel' },
-      h('h2', {}, 'Cargar horarios'),
+      h('h2', {}, 'Planillas de horarios'),
+      h('p', { class: 'suave chico' }, 'Acá quedan guardadas las planillas que me pasaste, para consultarlas. Para planear los viajes la app usa los horarios que publica Paraná Online; las planillas solo se usan para estimar lo que Paraná Online todavía no tenga (se puede apagar en Ajustes).'),
       h('button', { class: 'btn pri grande', onclick: () => fotos.click() }, '📷 Leer planilla desde foto'),
       h('p', { class: 'suave chico' }, 'Elegí la imagen de la planilla tal como te llegó (mejor que una foto a la pantalla). Podés elegir varias juntas, por ejemplo hábiles y domingo: la app reconoce la línea, el tipo de día, cada parada y cada horario, y te muestra la tabla para revisar antes de guardar. No hace falta ninguna clave.'),
       h('button', { class: 'btn', onclick: () => nuevaAMano(raiz, repintar) }, '＋ Nueva planilla a mano'), fotos, importar),

@@ -1,6 +1,8 @@
 // Arranque: carga estado y datos, rutea las pestañas y registra el service worker.
 import { $, h } from './ui.js';
-import { cargarEstado, cargarDatos, E } from './estado.js';
+import { cargarEstado, cargarDatos, E, guardar, recordarLugar } from './estado.js';
+import { lugarDeTextoCompartido } from './buscador.js';
+import { dialogo, toast } from './ui.js';
 import { vistaPlanear } from './vista-planear.js';
 import { vistaVivo, retomarViaje } from './vista-vivo.js';
 import { vistaLineas } from './vista-lineas.js';
@@ -34,8 +36,28 @@ async function iniciar() {
   retomarViaje();
   window.addEventListener('hashchange', rutear);
   window.addEventListener('online', red); window.addEventListener('offline', red); red();
-  if (E.viaje && !location.hash) location.hash = '#vivo';
+  if (E.viaje && !location.hash && !recibido()) location.hash = '#vivo';
   rutear();
+  await atenderCompartido();
+}
+
+// Compartir un lugar desde Google Maps hacia esta app (share_target del manifest): llega como ?title=&text=&url=
+function recibido() { const q = new URLSearchParams(location.search); return !!(q.get('text') || q.get('url') || q.get('title')); }
+async function atenderCompartido() {
+  const q = new URLSearchParams(location.search);
+  const [titulo, texto, enlace] = [q.get('title'), q.get('text'), q.get('url')].map(x => x || '');
+  const txt = [texto.includes(titulo) ? '' : titulo, texto, texto.includes(enlace) ? '' : enlace].filter(Boolean).join('\n');
+  if (!txt) return;
+  history.replaceState(null, '', location.pathname + '#planear'); // limpia la dirección para que no se repita al recargar
+  toast('Buscando el lugar que compartiste…');
+  let res = [];
+  try { res = await lugarDeTextoCompartido(txt); } catch { /* sin conexión o sin resultados */ }
+  const usar = (clave, p) => { E.plan[clave] = recordarLugar(p).id; guardar(); dl.cerrar(); if (location.hash !== '#planear') location.hash = '#planear'; else rutear(); };
+  const dl = dialogo('Lugar compartido', res.length
+    ? [h('p', { class: 'suave' }, 'Elegí cuál es y para qué lo querés usar:'),
+       ...res.slice(0, 4).map(p => h('div', { class: 'panel' }, h('strong', {}, p.nombre),
+         h('div', { class: 'fila', style: 'margin-top:8px' }, h('button', { class: 'btn pri', onclick: () => usar('destino', p) }, 'Quiero ir acá'), h('button', { class: 'btn', onclick: () => usar('origen', p) }, 'Salgo desde acá'))))]
+    : [h('p', {}, 'No pude ubicar ese lugar. Google Maps a veces comparte un link corto que no trae la posición: probá con "Compartir" → "Copiar link" de la vista de mapa y pegalo en el buscador, o cargá la clave de Google en Ajustes.')]);
 }
 
 // En la compu (localhost) el service worker solo se activa con ?sw, para no ver archivos viejos al desarrollar.

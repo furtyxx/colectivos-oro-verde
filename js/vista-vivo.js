@@ -1,10 +1,10 @@
 // Pestaña "En viaje": pasos con cuenta regresiva, "Ya subí", avisos de bajada por GPS (o por horario).
 import { h, $, toast, fmtM, hoyISO, gmapsAPie, mapa, confirmar, poner } from './ui.js';
 import { E, guardar, linea, cuandoLlega } from './estado.js';
-import { aHora, dist } from './motor.js';
+import { aHora, dist, proyectar } from './motor.js';
 
 const ORDEN = { nada: 0, prep: 1, timbre: 2, bajar: 3, caminando: 4, fin: 5 };
-const R = { fix: null, gpsError: '', watch: null, lock: null, audio: null, reloj: null, alarma: null, silenciada: {}, raiz: null };
+const R = { mapaBox: null, fix: null, gpsError: '', watch: null, lock: null, audio: null, reloj: null, alarma: null, silenciada: {}, raiz: null };
 
 // ---------- crear / terminar ----------
 export function iniciarViaje(v, ctx) {
@@ -67,7 +67,14 @@ const SONIDO = {
   timbre: () => { for (let i = 0; i < 3; i++) bip(1047, .22, i * .3); navigator.vibrate?.([400, 150, 400, 150, 400]); },
   bajar: () => { [784, 988, 1175, 1568].forEach((f, i) => bip(f, .16, i * .17)); bip(1568, .5, .7); navigator.vibrate?.([700, 150, 700, 150, 1000]); },
 };
-export function probarSonido() { SONIDO.timbre(); }
+/** Prueba: vibra ya y, a los 6 segundos, manda un aviso de prueba (para ver cómo se ve con otra app al frente). */
+export async function probarSonido() {
+  SONIDO.timbre();
+  if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission().catch(() => {});
+  const ok = 'Notification' in window && Notification.permission === 'granted';
+  toast(ok ? 'En 6 segundos te mando un aviso de prueba: salí de la app para ver cómo aparece.' : 'Las notificaciones están bloqueadas: los avisos solo se ven con la app abierta. Activalas en los ajustes del teléfono.', 6000);
+  if (ok) setTimeout(() => notificar('¡Tocá el timbre!', 'Esto es una prueba del aviso de bajada.', 'timbre'), 6000);
+}
 
 async function pantallaPrendida() {
   if (!('wakeLock' in navigator) || R.lock || document.visibilityState !== 'visible') return;
@@ -80,8 +87,8 @@ function gpsOn() {
   if (R.watch != null) return;
   if (!navigator.geolocation) { R.gpsError = 'Este dispositivo no tiene GPS: aviso por horario.'; return; }
   R.watch = navigator.geolocation.watchPosition(
-    p => { R.fix = { lat: p.coords.latitude, lon: p.coords.longitude, prec: p.coords.accuracy, ts: Date.now() }; R.gpsError = ''; evaluar(); },
-    e => { R.gpsError = e.code === 1 ? 'Sin permiso de ubicación: aviso por horario.' : 'Sin señal de GPS: aviso por horario.'; },
+    p => { R.fix = { lat: p.coords.latitude, lon: p.coords.longitude, prec: p.coords.accuracy, ts: Date.now() }; R.gpsError = ''; evaluar(); pintarMapa(); },
+    e => { R.gpsError = e.code === 1 ? 'Sin permiso de ubicación: aviso por horario.' : 'Sin señal de GPS: aviso por horario.'; pintarMapa(); },
     { enableHighAccuracy: true, maximumAge: 5000, timeout: 30000 });
 }
 const gpsOk = () => R.fix && Date.now() - R.fix.ts < 45000 && R.fix.prec <= 250;
@@ -90,6 +97,7 @@ export function activarAvisos() {
   if (!E.viaje) return;
   E.viaje.avisos = true; guardar();
   audio(); bip(880, .12, 0, .3);
+  if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission().catch(() => {});
   gpsOn(); pantallaPrendida();
   arrancarReloj();
 }
@@ -103,13 +111,23 @@ function apagar() {
 function arrancarReloj() { if (!R.reloj) R.reloj = setInterval(() => { evaluar(); refrescar(); }, 1000); }
 
 // ---------- avisos ----------
+const PATRON = { prep: [200, 100, 200], timbre: [400, 150, 400, 150, 400, 150, 400], bajar: [700, 150, 700, 150, 700, 150, 1000] };
+/** Aviso del sistema (un cartelito arriba, aunque estés en otra app). Solo si la app no está a la vista. */
+async function notificar(titulo, cuerpo, etapa) {
+  if (!('Notification' in window) || Notification.permission !== 'granted' || document.visibilityState === 'visible') return;
+  const op = { body: cuerpo, tag: 'ov-aviso', renotify: true, requireInteraction: etapa !== 'prep', vibrate: PATRON[etapa], icon: 'icons/icon-192.png', badge: 'icons/icon-192.png' };
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    if (reg) await reg.showNotification(titulo, op); else new Notification(titulo, op);
+  } catch { /* el navegador no deja mostrarla */ }
+}
 function pararAlarma() { clearInterval(R.alarma); R.alarma = null; }
 function mostrarAlerta(etapa) {
   const V = E.viaje, el = $('#alerta'), porGps = gpsOk();
   const T = {
-    prep: ['Preparate', `Falta poco para ${V.baja.nombre}. Andá acercándote a la puerta.`],
-    timbre: ['¡TOCÁ EL TIMBRE!', `La próxima es ${V.baja.nombre}.`],
-    bajar: ['BAJATE ACÁ', `${V.baja.nombre}. Después caminás ${V.minDestino} min hasta ${V.destino.nombre}.`],
+    prep: ['Preparate para bajar', `Falta poco para ${V.baja.nombre}.`],
+    timbre: ['¡Tocá el timbre!', `La próxima es ${V.baja.nombre}.`],
+    bajar: ['¡Bajate acá!', `${V.baja.nombre}. Después caminás ${V.minDestino} min.`],
   }[etapa];
   el.className = 'alerta ' + etapa;
   poner(el, h('h2', {}, T[0]), h('p', {}, T[1]),
@@ -120,6 +138,7 @@ function mostrarAlerta(etapa) {
   el.hidden = false;
   pararAlarma();
   SONIDO[etapa]();
+  notificar(T[0], T[1], etapa);
   if (etapa !== 'prep') {
     let n = 0; const max = etapa === 'timbre' ? 14 : 12;
     R.alarma = setInterval(() => { if (++n >= max || E.viaje?.etapa !== etapa) return pararAlarma(); SONIDO[etapa](); }, etapa === 'timbre' ? 3000 : 2500);
@@ -175,7 +194,7 @@ function pasos() {
     { t: V.tParada, txt: 'Estar en la parada', sub: `${V.sube.nombre} · puede pasar desde esta hora` },
     { t: subio ? V.subiReal : V.tSube, txt: subio ? 'Subiste' : `Pasa el ${V.lineaNombre}`, sub: subio ? (T.atraso ? `${Math.abs(T.atraso)} min ${T.atraso > 0 ? 'después' : 'antes'} del horario (${aHora(V.tSube)})` : 'en horario') : `horario${V.subeExacto ? '' : ' estimado'} en tu parada`, clave: 'sube' },
     ...T.refs.filter(r => V.bajeReal == null || r.t < V.bajeReal).map(r => ({ t: r.t, txt: r.nombre, sub: 'punto de control de la planilla' })),
-    { t: V.bajeReal ?? T.tBaja, txt: V.bajeReal != null ? 'Bajaste' : `Tocar timbre y bajar en ${V.baja.nombre}`, sub: V.bajeReal != null ? V.baja.nombre : 'te aviso antes con sonido y vibración', clave: 'baja' },
+    { t: V.bajeReal ?? T.tBaja, txt: V.bajeReal != null ? 'Bajaste' : `Tocar timbre y bajar en ${V.baja.nombre}`, sub: V.bajeReal != null ? V.baja.nombre : 'te aviso antes con vibración', clave: 'baja' },
     { t: T.tLlega, txt: `Llegar a ${V.destino.nombre}`, sub: V.minDestino ? `${V.minDestino} min caminando (${fmtM(V.mDestino)})` : 'la parada está al lado' },
     V.micro != null && { t: V.micro, txt: 'Sale tu micro', sub: T.tLlega <= V.micro ? `llegás con ${Math.round(V.micro - T.tLlega)} min de margen` : '⚠ con este atraso no llegás' },
   ].filter(Boolean);
@@ -189,6 +208,32 @@ function pasos() {
   return { L, iAhora, T, t };
 }
 
+/** Mapa del recorrido con tu posición, y en qué parte del recorrido vas. Se repinta con cada lectura de GPS. */
+function pintarMapa() {
+  const V = E.viaje, box = R.mapaBox;
+  if (!V || !box?.isConnected) return;
+  const Lin = linea(V.linea), S = Lin?.sentidos[V.sentido];
+  if (!S) return;
+  const pts = S.ramales[V.ri]?.pts || S.ramales[0].pts, ri = S.ramales[V.ri] ? V.ri : 0;
+  const bajaS = S.paradas[V.baja.n - 1];
+  const ok = gpsOk(), pos = ok ? proyectar(pts, R.fix) : null, enRuta = pos && pos.fuera <= 250;
+  const marcas = [{ ...V.sube, color: '#2563eb', texto: 'Subís' }, { ...V.baja, color: '#dc2626', texto: 'Bajás' }, { ...V.destino, color: '#16a34a', texto: V.destino.nombre.split(' ')[0] }];
+  if (ok && pos.fuera < 8000) marcas.push({ ...R.fix, color: '#f59e0b', texto: 'Vos' });
+  const info = [];
+  if (!ok) info.push(h('span', { class: 'suave' }, R.gpsError || 'Buscando señal de GPS…'));
+  else if (!enRuta) info.push(h('strong', {}, `Estás a ${fmtM(pos.fuera)} del recorrido`), h('span', { class: 'suave' }, V.subiReal == null ? 'Todavía no subiste al colectivo.' : 'Te alejaste del recorrido de la línea.'));
+  else {
+    const m = pos.m, hechas = S.paradas.filter(s => s.m[ri] != null && s.m[ri] <= m + 15), faltan = S.paradas.filter(s => s.m[ri] != null && s.m[ri] > m + 15);
+    const ant = hechas.at(-1), prox = faltan[0], bm = bajaS?.m[ri];
+    const hasta = bm != null ? bm - m : null;
+    info.push(
+      h('strong', {}, hasta != null && hasta < -80 ? 'Ya pasaste tu parada de bajada' : `Vas por ${ant ? ant.nombre : 'el comienzo del recorrido'}`),
+      prox && h('span', {}, `Próxima parada: ${prox.nombre}`),
+      hasta != null && hasta >= -80 && h('span', {}, `Faltan ${faltan.filter(s => s.n <= V.baja.n).length} paradas (${fmtM(Math.max(0, hasta))}) para bajar en ${V.baja.nombre}`));
+  }
+  poner(box, mapa({ rutas: [pts], paradas: S.paradas, marcas }), h('div', { class: 'posicion' }, ...info.filter(Boolean)));
+}
+
 function refrescar() { // actualiza solo números que cambian cada segundo
   const V = E.viaje, raiz = R.raiz;
   if (!V || !raiz?.isConnected) return;
@@ -200,7 +245,7 @@ function refrescar() { // actualiza solo números que cambian cada segundo
     else { num.textContent = falta(prox.t - t); cap.textContent = `${prox.t >= t ? 'para' : 'desde'}: ${prox.txt} (${aHora(prox.t)})`; }
   }
   if (gps) {
-    if (!V.avisos) gps.textContent = 'Avisos apagados.';
+    if (!V.avisos) gps.textContent = gpsOk() ? `GPS ok (±${Math.round(R.fix.prec)} m). Avisos apagados.` : 'Avisos apagados.';
     else if (gpsOk()) {
       const obj = V.etapa === 'caminando' || V.etapa === 'fin' ? V.destino : V.baja;
       gps.textContent = `GPS ok (±${Math.round(R.fix.prec)} m). Estás a ${fmtM(dist(R.fix, obj))} de ${obj.nombre}.`;
@@ -220,7 +265,8 @@ function pintar() {
       h('a', { class: 'btn pri', href: '#planear' }, 'Planear un viaje')));
     return;
   }
-  const { L, iAhora, T } = pasos(), Lin = linea(V.linea), S = Lin?.sentidos[V.sentido];
+  const { L, iAhora, T } = pasos();
+  R.mapaBox = h('div', { class: 'mapa-vivo' });
   const otroDia = V.fecha !== hoyISO();
   const acciones = [];
   if (!V.avisos) acciones.push(h('button', { class: 'btn pri grande', onclick: () => { activarAvisos(); pintar(); } }, '🔔 Activar avisos, GPS y pantalla prendida'));
@@ -236,26 +282,25 @@ function pintar() {
       V.dudoso && h('p', { class: 'nota ojo chico' }, 'Servicio dudoso: no está confirmado que pase por tu parada.'),
       h('div', { class: 'cuenta' }, h('div', { class: 'num' }, '…'), h('div', { class: 'cap suave' }, '')),
       ...acciones,
+      R.mapaBox,
       h('p', { id: 'gps-linea', class: 'suave chico' }, ''),
       T.atraso ? h('p', { class: 'nota chico' }, `Horarios recalculados con ${Math.abs(T.atraso)} min de ${T.atraso > 0 ? 'atraso' : 'adelanto'}.`) : null),
     h('section', { class: 'panel' }, h('h2', {}, 'Pasos'),
       h('ol', { class: 'linea-tiempo', 'data-ahora': iAhora }, L.map((p, i) => h('li', { class: i < iAhora ? 'hecho' : i === iAhora ? 'ahora' : '' },
         h('span', { class: 'h' }, aHora(p.t)), h('span', { class: 'p' }), h('span', {}, p.txt, h('small', {}, p.sub)))))),
-    S && h('section', { class: 'panel' }, h('h2', {}, 'Recorrido'),
-      mapa({ rutas: [S.ramales[V.ri]?.pts || S.ramales[0].pts], paradas: S.paradas, marcas: [
-        { ...V.sube, color: '#2563eb', texto: 'Subís' }, { ...V.baja, color: '#dc2626', texto: 'Bajás' }, { ...V.destino, color: '#16a34a', texto: V.destino.nombre.split(' ')[0] },
-        ...(gpsOk() ? [{ ...R.fix, color: '#f59e0b', texto: 'Vos' }] : [])] }),
+    h('section', { class: 'panel' },
       h('div', { class: 'fila' },
         h('a', { class: 'btn mini', href: cuandoLlega, target: '_blank', rel: 'noopener' }, 'Colectivo en tiempo real'),
         h('a', { class: 'btn mini', href: gmapsAPie(V.destino), target: '_blank', rel: 'noopener' }, 'A pie desde donde estoy'))),
     h('button', { class: 'btn peligro', onclick: terminar }, 'Terminar viaje'));
+  pintarMapa();
   refrescar();
 }
 
 export function vistaVivo(raiz) {
   R.raiz = raiz;
   pintar();
-  if (E.viaje) arrancarReloj();
+  if (E.viaje) { arrancarReloj(); gpsOn(); } // el GPS marca por dónde vas aunque no hayas activado los avisos
 }
 
 /** Al abrir la app con un viaje guardado: retoma GPS y reloj (el sonido necesita un toque). */

@@ -7,7 +7,7 @@ const CLAVE = 'ov.estado.v1';
 /** Lo que se guarda: ajustes, lugares, planillas, viaje en curso y último plan. */
 export const E = { cfg: {}, lugares: [], planillas: [], borradas: [], viaje: null, plan: {} };
 /** Datos de solo lectura generados por tools/actualizar.mjs */
-export const D = { lineas: [], generado: null, cambios: null, calles: null };
+export const D = { lineas: [], generado: null, cambios: null, calles: null, horarios: null };
 
 export function cargarEstado() {
   let g = {};
@@ -36,6 +36,7 @@ export async function cargarDatos() {
   const pref = ['6', '15'];
   D.lineas.sort((a, b) => (pref.indexOf(a.id) + 1 || 99) - (pref.indexOf(b.id) + 1 || 99));
   try { D.cambios = await (await fetch('data/cambios.json')).json(); } catch { D.cambios = null; }
+  try { D.horarios = await (await fetch('data/horarios.json')).json(); } catch { D.horarios = null; }
 }
 
 export async function cargarCalles() {

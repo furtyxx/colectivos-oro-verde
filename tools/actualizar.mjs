@@ -21,6 +21,7 @@ const SITIO = 'https://www.paranaonline.com.ar';
 const INDICE = SITIO + '/colectivos-parana/';
 const SLUGS_BASE = ['horarios-linea-4', 'horarios-linea-6', 'horarios-linea-12', 'horarios-linea-15',
   'horarios-linea-17-am', 'horarios-linea-20', 'horarios-linea-22', 'horarios-linea-22e-an', 'horarios-linea-24'];
+const URBANAS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'l', 'm', 'p', 'r', 's'].map(x => 'linea-' + x);
 const BBOX = '-31.87,-60.60,-31.69,-60.44';
 const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter'];
 
@@ -334,6 +335,59 @@ async function procesarLinea(slug, idx) {
   };
 }
 
+// ---------- líneas urbanas (A, B, C…): la página lista las paradas de cada servicio, en orden, con el horario de todo el día ----------
+const distAPoly = (p, pts) => { let m = Infinity; for (let i = 0; i < pts.length - 1; i++) m = Math.min(m, proySeg(p, pts[i], pts[i + 1]).d); return m; };
+
+async function procesarUrbana(slug, idx, previa) {
+  const url = `${SITIO}/${slug}/`;
+  const html = await bajar(url);
+  const pag = leerPagina(html);
+  if (!pag.mid) throw new Error('la página no tiene mapa');
+  await dormir(800);
+  const capas = leerMapa(await bajar(`https://www.google.com/maps/d/embed?mid=${pag.mid}`));
+  const id = slug.replace('linea-', '').toUpperCase();
+  const rutas = capas.flatMap(c => c.lineas.filter(l => l.pts.length > 3).map(l => simplificar(l.pts.map(p => [r5(p[0]), r5(p[1])]), 4)));
+  const mapa = capas.filter(c => /parada/i.test(c.nombre)).flatMap(c => c.puntos.map(p => [p.pos[0], p.pos[1]]));
+  const titulos = new Map([...html.matchAll(/<option value='(\d+)'[^>]*>([^<]+)<\/option>/g)].map(m => [m[1], desEntidad(m[2]).replace(/&gt;/g, '>').replace(/\s+/g, ' ').trim()]));
+  const sentidos = {};
+  for (const trozo of html.split(/<div class='linea-servicio' data-id='/).slice(1)) {
+    const sid = trozo.match(/^(\d+)/)[1];
+    const crudas = [...trozo.matchAll(/<button class='parada-btn' data-target='horarios-\d+-(\d+)'[^>]*>\s*([^<]+?)\s*<\/button>/g)]
+      .map(m => ({ pid: m[1], web: desEntidad(m[2]).replace(/\s+/g, ' ').trim() }));
+    if (crudas.length < 3) { if (previa?.sentidos?.[sid]) sentidos[sid] = previa.sentidos[sid]; continue; } // hoy no tiene horarios: conservo lo que había
+    // cada parada se llama "CALLE A - CALLE B": la ubico en el cruce
+    const lista = crudas.map(p => {
+      const partes = p.web.replace(/\s*\[[^\]]*\]\s*/g, ' ').trim().split(/\s+-\s+/);
+      return { ...p, partes, cands: partes.length === 2 ? idx.cruces(partes[0], partes[1]) : [] };
+    });
+    // el recorrido es el trazo del mapa por el que pasan más paradas, en el orden en que están listadas
+    let mejor = null;
+    for (const pts of rutas) {
+      const ps = [];
+      for (const p of lista) {
+        let c = null;
+        for (const q of p.cands) { const d = distAPoly(q, pts); if (d <= 60 && (!c || d < c.d)) c = { d, q }; }
+        if (!c) continue;
+        const snap = mapa.map(q => ({ q, d: dist(q, c.q) })).filter(x => x.d <= 45).sort((a, b) => a.d - b.d)[0];
+        ps.push({ ...p, lat: r5((snap ? snap.q : c.q)[0]), lon: r5((snap ? snap.q : c.q)[1]) });
+      }
+      if (ps.length < 3) continue;
+      const ms = metrosEnRecorrido(pts, ps), buenas = ps.filter((_, i) => typeof ms[i] === 'number');
+      if (!mejor || buenas.length > mejor.n) mejor = { pts, ps, ms, n: buenas.length };
+    }
+    if (!mejor || mejor.n < 3) { log(`  (${id} servicio ${sid}: no pude ubicar el recorrido, lo salteo)`); if (previa?.sentidos?.[sid]) sentidos[sid] = previa.sentidos[sid]; continue; }
+    const paradas = [];
+    mejor.ps.forEach((p, i) => {
+      if (typeof mejor.ms[i] !== 'number') return;
+      paradas.push({ n: paradas.length + 1, lat: p.lat, lon: p.lon, nombre: p.partes.map(bonito).join(' y '), web: p.web, pid: p.pid, m: [mejor.ms[i]] });
+    });
+    const desc = (titulos.get(sid) || '').replace(/^\[[^\]]*\]\s*/, '').replace(/\s*>\s*/g, ' → ').replace(/\s+/g, ' ').trim();
+    const largo = Math.round(mejor.pts.reduce((a, p, i) => a + (i ? dist(mejor.pts[i - 1], p) : 0), 0));
+    sentidos[sid] = { desc, cartel: (titulos.get(sid) || '').match(/^\[([^\]]+)\]/)?.[1] || '', ramales: [{ nombre: '', desc, pts: mejor.pts, largo }], paradas, puntos: {} };
+  }
+  return { id, nombre: 'Línea ' + id, tipo: 'urbana', url, mapa: `https://www.google.com/maps/d/viewer?mid=${pag.mid}`, webModificada: pag.modificado, webNota: pag.nota, sentidos, _tipoHoy: pag.tipoHoy, _oficiales: Object.keys(sentidos).length };
+}
+
 function resumenCambios(antes, ahora) {
   const out = [];
   if (!antes) return ['Línea nueva en los datos'];
@@ -358,25 +412,34 @@ async function main() {
     if (hallados.length) slugs = [...new Set([...SLUGS_BASE.filter(s => hallados.includes(s)), ...hallados])];
   } catch (e) { log('No pude leer el índice de líneas, uso la lista fija:', e.message); }
 
+  slugs = [...new Set([...slugs, ...URBANAS])];
+  // --lineas a,f,6  solo vuelve a leer esas líneas (el resto queda como estaba)
+  const solo = (process.argv.find(a => a.startsWith('--lineas=')) || '').slice(9).split(',').filter(Boolean).map(x => x.toLowerCase());
   let previo = null;
   try { previo = JSON.parse(await fs.readFile(path.join(DATA, 'lineas.json'), 'utf8')); } catch { /* primera vez */ }
   const lineas = [], errores = [], cambios = [], hoy = {};
   for (const slug of slugs) {
+    if (solo.length && !solo.some(x => slug === 'linea-' + x || slug === 'horarios-linea-' + x)) {
+      const igual = previo?.lineas.find(x => x.url && x.url.replace(/\/$/, '').endsWith('/' + slug));
+      if (igual) lineas.push(igual);
+      continue;
+    }
     try {
-      const L = await procesarLinea(slug, idx);
+      const antesL = previo?.lineas.find(x => x.url && x.url.replace(/\/$/, '').endsWith('/' + slug));
+      const L = slug.startsWith('linea-') ? await procesarUrbana(slug, idx, antesL) : await procesarLinea(slug, idx);
       hoy[L.id] = L._tipoHoy; delete L._tipoHoy;
       const nPar = Object.values(L.sentidos).reduce((a, s) => a + s.paradas.length, 0);
       const conWeb = Object.values(L.sentidos).reduce((a, s) => a + s.paradas.filter(p => p.web).length, 0);
       log(`✓ ${L.nombre}: ${nPar} paradas (${conWeb} con nombre oficial de ${L._oficiales}), sentidos ${Object.keys(L.sentidos).join('/')}`);
       delete L._oficiales;
       if (!nPar) throw new Error('el mapa no trae paradas');
-      const antes = previo?.lineas.find(x => x.id === L.id);
+      const antes = antesL;
       const c = resumenCambios(antes, L);
       if (previo && c.length) cambios.push({ linea: L.id, detalle: c });
       lineas.push(L);
     } catch (e) {
       errores.push(`${slug}: ${e.message}`); log(`✗ ${slug}: ${e.message}`);
-      const antes = previo?.lineas.find(x => 'horarios-linea-' + x.id.toLowerCase() === slug);
+      const antes = previo?.lineas.find(x => x.url && x.url.replace(/\/$/, '').endsWith('/' + slug));
       if (antes) lineas.push(antes); // conservo lo que había
     }
     await dormir(1200);
