@@ -38,6 +38,7 @@ async function iniciar() {
   window.addEventListener('online', red); window.addEventListener('offline', red); red();
   if (E.viaje && !location.hash && !recibido()) location.hash = '#vivo';
   rutear();
+  window.__listo = true; clearTimeout(window.__arranque);
   await atenderCompartido();
 }
 
@@ -65,4 +66,4 @@ const local = ['localhost', '127.0.0.1'].includes(location.hostname);
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || (local && location.search.includes('sw')))) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
-iniciar();
+iniciar().catch(e => { window.__rescate?.(e?.message || String(e)); });
