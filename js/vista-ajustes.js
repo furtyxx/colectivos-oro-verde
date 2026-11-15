@@ -48,10 +48,14 @@ export function vistaAjustes(raiz) {
       h('p', { class: 'suave chico' }, '"Mi parada" es la esquina donde tomás el colectivo. Para cambiarla, agregá el lugar nuevo y borrá el viejo.')),
 
     h('section', { class: 'panel' }, h('h2', {}, 'Leer planillas desde fotos'),
-      h('label', { class: 'campo' }, 'API key de Anthropic (se guarda solo en este teléfono)',
+      h('p', { class: 'suave chico' }, 'La app lee las planillas en este teléfono: gratis, sin clave y sin enviar la foto a ningún lado. Anda muy bien con la imagen original de la planilla (la que circula por WhatsApp). Si una foto sale torcida o borrosa y se lee mal, podés usar la lectura con Anthropic, que necesita una API key tuya.'),
+      h('label', { class: 'campo' }, 'Cómo leer las fotos', h('select', { onchange: e => { c.lector = e.target.value; guardar(); if (c.lector === 'api' && !c.apiKey) toast('Pegá la API key acá abajo; mientras tanto se lee en el teléfono'); } },
+        h('option', { value: 'telefono', selected: c.lector !== 'api' }, 'En el teléfono (gratis, sin clave)'),
+        h('option', { value: 'api', selected: c.lector === 'api' }, 'Con Anthropic (necesita API key)'))),
+      h('label', { class: 'campo' }, 'API key de Anthropic, opcional (se guarda solo en este teléfono)',
         h('input', { type: 'password', autocomplete: 'off', value: c.apiKey, placeholder: 'sk-ant-…', onchange: e => { c.apiKey = e.target.value.trim(); guardar(); toast(c.apiKey ? 'Clave guardada en este dispositivo' : 'Clave borrada'); } })),
       h('label', { class: 'campo' }, 'Modelo', h('input', { value: c.modelo, autocomplete: 'off', onchange: e => { c.modelo = e.target.value.trim() || CFG_DEFECTO.modelo; e.target.value = c.modelo; guardar(); } })),
-      h('p', { class: 'suave chico' }, 'La clave se crea en console.anthropic.com. La foto se envía a Anthropic solo cuando tocás "Leer planilla desde foto", y cada lectura se cobra en tu cuenta.')),
+      h('p', { class: 'suave chico' }, 'La clave se crea en console.anthropic.com. Solo si elegís "Con Anthropic" la foto se envía a Anthropic al tocar "Leer planilla desde foto", y cada lectura se cobra en tu cuenta.')),
 
     h('section', { class: 'panel' }, h('h2', {}, 'Instalar en el teléfono'),
       instalada ? h('p', { class: 'nota bien' }, 'Ya la estás usando como app instalada.')
@@ -59,7 +63,7 @@ export function vistaAjustes(raiz) {
           : h('p', { class: 'suave' }, 'En Chrome para Android: menú ⋮ → "Agregar a la pantalla principal" → "Instalar". Después funciona sin conexión con las planillas guardadas.')),
 
     h('section', { class: 'panel' }, h('h2', {}, 'Datos'),
-      h('p', { class: 'suave chico' }, `Recorridos: ${D.lineas.length} líneas de Paraná Online (${D.lineas.map(l => l.id).join(', ')}). Calles: © colaboradores de OpenStreetMap. Paraná Online y ERSA no tienen relación con esta app.`),
+      h('p', { class: 'suave chico' }, `Recorridos: ${D.lineas.length} líneas de Paraná Online (${D.lineas.map(l => l.id).join(', ')}). Calles: © colaboradores de OpenStreetMap. Lectura de fotos: Tesseract.js (Apache 2.0). Paraná Online y ERSA no tienen relación con esta app.`),
       h('div', { class: 'fila' },
         h('button', { class: 'btn mini', onclick: async () => {
           if (!(await confirmar('¿Volver a poner las planillas precargadas de la línea 6 (hábiles y domingo) como vinieron? Se pierden los cambios que les hayas hecho.', 'Restaurar'))) return;

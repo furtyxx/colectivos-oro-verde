@@ -1,10 +1,10 @@
 // Service worker: deja la app y los datos disponibles sin conexión.
 // Estrategia: se responde desde la copia guardada y, si hay red, se actualiza en segundo plano
 // (la próxima vez que abras la app ves lo nuevo). Los datos de recorridos van primero por red.
-const CACHE = 'colectivos-ov-v1';
+const CACHE = 'colectivos-ov-v2';
 const BASE = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
-  'js/app.js', 'js/ui.js', 'js/estado.js', 'js/datos.js', 'js/motor.js', 'js/buscador.js', 'js/lector.js',
+  'js/app.js', 'js/ui.js', 'js/estado.js', 'js/datos.js', 'js/motor.js', 'js/buscador.js', 'js/lector.js', 'js/ocr.js', 'js/tabla.js',
   'js/vista-planear.js', 'js/vista-vivo.js', 'js/vista-lineas.js', 'js/vista-planillas.js', 'js/vista-ajustes.js',
   'data/lineas.json', 'data/cambios.json', 'data/calles.json',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',

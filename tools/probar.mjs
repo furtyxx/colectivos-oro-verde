@@ -109,5 +109,48 @@ console.log('Columnas leídas de una foto');
   ok(cols[0].punto === 'facultad' && cols[0].parada === 1 && cols[4].punto === 'cruzsur' && cols[4].sentido === 'ida' && cols[9].punto === 'cruzsur' && cols[9].sentido === 'vuelta' && cols[13].parada === 48, 'ubica Facultad y Cruz Sur con encabezados cortados');
 }
 
+console.log('Lector de fotos en el teléfono (palabras reconocidas de las dos planillas reales)');
+{
+  const T = await import('../js/tabla.js');
+  ok(T.horaDeTexto('7:17') === '7:17' && T.horaDeTexto('1231') === '12:31' && T.horaDeTexto('717') === '7:17' && T.horaDeTexto('1O:O5') === '10:05' && T.horaDeTexto('25') === null && T.horaDeTexto('2026)') === null && T.horaDeTexto('1/2') === null && T.horaDeTexto('Ear') === null, 'reconoce horas y descarta lo que no lo es');
+  const comparar = (tabla, ref) => {
+    const r = T.resultadoDeTabla(tabla);
+    let bien = 0, mal = 0, falta = 0, sobra = 0;
+    for (let f = 0; f < Math.max(r.filas.length, ref.filas.length); f++) for (let c = 0; c < ref.nombres.length; c++) {
+      const a = r.filas[f]?.[c] ?? null, b = ref.filas[f]?.[c] ?? null;
+      if (a === b) { if (a != null) bien++; } else if (a == null) falta++; else if (b == null) sobra++; else mal++;
+    }
+    return { r, bien, mal, falta, sobra };
+  };
+  for (const [archivo, ref, tipo, vig] of [['palabras-habiles.json', PRECARGADAS[0], 'habil', '26/05/26'], ['palabras-domingo.json', PRECARGADAS[1], 'domingo', 'AGOSTO 2026']]) {
+    const tabla = T.armarTabla(JSON.parse(fs.readFileSync(path.join(raiz, 'tools/muestras', archivo), 'utf8')));
+    ok(tabla.linea === '6' && tabla.tipo === tipo && tabla.vigencia === vig, `${archivo}: título → línea ${tabla.linea}, ${tabla.tipo}, vigencia ${tabla.vigencia}`);
+    ok(tabla.nombres.join('|') === ref.nombres.join('|'), `${archivo}: las ${tabla.nombres.length} paradas (columnas) con su nombre completo`);
+    const cols = M.resolverColumnas(L('6'), tabla.nombres), colsRef = M.resolverColumnas(L('6'), ref.nombres, ref.vueltaDesde);
+    ok(cols.every((c, i) => c.parada === colsRef[i].parada && c.sentido === colsRef[i].sentido) && M.dondeVuelve(tabla.nombres) === ref.vueltaDesde, `${archivo}: cada columna queda en la misma parada del recorrido que la planilla precargada (${cols.filter(c => c.parada).length} ubicadas), ida y vuelta separadas`);
+    const uno = comparar(tabla, ref), total = ref.filas.flat().filter(x => x != null).length;
+    console.log(`    1ª pasada: ${uno.bien} de ${total} horarios bien, ${uno.mal} mal, ${uno.falta} sin leer, ${uno.sobra} de más; en rojo para corregir: ${uno.r.sinFormato.length}`);
+    ok(uno.mal === 0 && uno.sobra === 0 && uno.falta === uno.r.sinFormato.length && uno.falta <= 1, `${archivo}: ningún horario mal leído y lo que no se pudo leer queda marcado`);
+    // 2ª pasada simulada: el relector devuelve la hora correcta solo en las celdas que tenían algo, y basura en las vacías
+    const centro = (f, c) => `${Math.round(tabla.cols[c].cx)},${Math.round(tabla.filas[f].cy)}`;
+    const verdad = new Map(); ref.filas.forEach((fila, f) => fila.forEach((m, c) => { if (m != null) verdad.set(centro(f, c), M.aHora(m)); }));
+    await T.segundaPasada(tabla, caja => {
+      for (const [k, v] of verdad) { const [x, y] = k.split(',').map(Number); if (x >= caja.left && x <= caja.left + caja.width && y >= caja.top && y <= caja.top + caja.height) return v.replace(':', ''); }
+      return ['1', '11', ':1'][caja.left % 3]; // ruido típico de una celda vacía (pedacitos de la grilla)
+    });
+    const dos = comparar(tabla, ref);
+    ok(dos.bien === total && dos.mal + dos.falta + dos.sobra === 0, `${archivo}: con la 2ª pasada quedan los ${total} horarios, sin inventar nada en las celdas vacías`);
+    ok(dos.r.dudas.length === uno.falta && M.validarPlanilla(dos.r.filas).size === 0, `${archivo}: lo que costó leer queda en amarillo (${dos.r.dudas.length}) y la planilla es coherente`);
+    // un relector que inventa la misma hora en todas las celdas vacías no logra meterla donde no encaja
+    const t2 = T.armarTabla(JSON.parse(fs.readFileSync(path.join(raiz, 'tools/muestras', archivo), 'utf8')));
+    await T.segundaPasada(t2, () => '111');
+    const tres = comparar(t2, ref);
+    console.log(`    relector tramposo ("1:11" en todas las vacías): ${tres.sobra} celdas inventadas de ${ref.filas.flat().filter(x => x == null).length} vacías, todas marcadas en amarillo`);
+    ok(tres.sobra <= 5 && tres.mal === 0 && tres.r.dudas.length >= tres.sobra, `${archivo}: el control de orden frena casi todo lo inventado y lo que pasa queda en duda`);
+  }
+  let tiro = false; try { T.armarTabla([{ t: 'hola', c: 90, x0: 0, y0: 0, x1: 10, y1: 10 }]); } catch { tiro = true; }
+  ok(tiro, 'una imagen sin tabla de horarios da error en vez de una planilla vacía');
+}
+
 console.log(fallas ? `\n${fallas} PRUEBA(S) FALLARON` : '\nTodo OK');
 process.exit(fallas ? 1 : 0);

@@ -3,6 +3,7 @@ import { h, dialogo, toast, confirmar, poner } from './ui.js';
 import { E, D, guardar, linea } from './estado.js';
 import { aMin, aHora, filaAMin, validarPlanilla, resolverColumnas, dondeVuelve, NOMBRE_TIPO } from './motor.js';
 import { leerPlanilla } from './lector.js';
+import { leerPlanillaEnTelefono } from './ocr.js';
 
 const TIPOS = ['habil', 'sabado', 'domingo'];
 const tituloDe = (lin, tipo) => `Línea ${lin} · ${{ habil: 'Hábiles', sabado: 'Sábado', domingo: 'Domingo' }[tipo]}`;
@@ -135,22 +136,24 @@ function nuevaAMano(raiz, alTerminar) {
 
 // ---------- desde foto ----------
 async function desdeFotos(raiz, archivos, alTerminar) {
-  if (!E.cfg.apiKey) {
-    dialogo('Falta la API key', [
-      h('p', {}, 'Para leer fotos la app usa la API de Anthropic con tu propia clave. Se guarda solo en este teléfono y cada lectura se cobra en tu cuenta de Anthropic (unos centavos de dólar por foto).'),
-      h('a', { class: 'btn pri', href: '#ajustes', onclick: e => e.target.closest('dialog').close() }, 'Ir a Ajustes para pegarla')]);
-    return;
-  }
   const cola = [...archivos];
-  const estado = h('p', {}, ''), panel = h('section', { class: 'panel' }, h('h2', {}, 'Leyendo foto…'), estado, h('p', { class: 'suave chico' }, 'Puede tardar hasta un par de minutos por foto. No cierres la app.'));
+  // por defecto se lee en el teléfono; con API key y eligiéndolo en Ajustes, con Anthropic
+  let conApi = E.cfg.lector === 'api' && !!E.cfg.apiKey;
+  const estado = h('p', {}, ''), ayuda = h('p', { class: 'suave chico' }, '');
+  const panel = h('section', { class: 'panel' }, h('h2', {}, 'Leyendo foto…'), estado, ayuda);
   const siguiente = async () => {
     const archivo = cola.shift();
     if (!archivo) return alTerminar();
     poner(raiz, panel);
     const total = archivos.length, n = total - cola.length;
-    estado.textContent = `Foto ${n} de ${total}: enviando…`;
+    const decir = t => { estado.textContent = `Foto ${n} de ${total}: ${t}`; };
+    decir(conApi ? 'enviando…' : 'preparando…');
+    ayuda.textContent = conApi ? 'Leyendo con Anthropic: puede tardar hasta un par de minutos por foto. No cierres la app.'
+      : 'Se lee en este teléfono, sin enviar la foto a ningún lado. Suele tardar menos de un minuto. No cierres la app.';
     try {
-      const r = await leerPlanilla(archivo, { apiKey: E.cfg.apiKey, modelo: E.cfg.modelo, alAvanzar: c => { estado.textContent = `Foto ${n} de ${total}: leyendo… (${c} caracteres)`; } });
+      const r = conApi
+        ? await leerPlanilla(archivo, { apiKey: E.cfg.apiKey, modelo: E.cfg.modelo, alAvanzar: c => decir(`leyendo… (${c} caracteres)`) })
+        : await leerPlanillaEnTelefono(archivo, { alAvanzar: decir });
       const lin = D.lineas.some(l => l.id === r.linea) ? r.linea : (D.lineas[0]?.id || '6');
       const tipo = r.tipo || 'habil';
       const avisos = [
@@ -164,7 +167,10 @@ async function desdeFotos(raiz, archivos, alTerminar) {
     } catch (e) {
       poner(raiz, h('section', { class: 'panel' }, h('h2', {}, `No pude leer la foto ${n}`), h('p', { class: 'nota mal' }, e.message || String(e)),
         h('div', { class: 'fila' }, h('button', { class: 'btn', onclick: alTerminar }, 'Volver'),
-          cola.length ? h('button', { class: 'btn pri', onclick: siguiente }, 'Seguir con la próxima foto') : h('button', { class: 'btn pri', onclick: () => { cola.unshift(archivo); siguiente(); } }, 'Reintentar'))));
+          h('button', { class: 'btn', onclick: () => { cola.unshift(archivo); siguiente(); } }, 'Reintentar'),
+          conApi ? h('button', { class: 'btn', onclick: () => { conApi = false; cola.unshift(archivo); siguiente(); } }, 'Leerla en el teléfono')
+            : E.cfg.apiKey ? h('button', { class: 'btn', onclick: () => { conApi = true; cola.unshift(archivo); siguiente(); } }, 'Probar con Anthropic') : null,
+          cola.length ? h('button', { class: 'btn pri', onclick: siguiente }, 'Seguir con la próxima foto') : null)));
     }
   };
   siguiente();
@@ -199,7 +205,7 @@ export function vistaPlanillas(raiz) {
     h('section', { class: 'panel' },
       h('h2', {}, 'Cargar horarios'),
       h('button', { class: 'btn pri grande', onclick: () => fotos.click() }, '📷 Leer planilla desde foto'),
-      h('p', { class: 'suave chico' }, 'Podés elegir varias fotos juntas (por ejemplo hábiles y domingo): se leen una por una y te las muestro para revisar antes de guardar.'),
+      h('p', { class: 'suave chico' }, 'Elegí la imagen de la planilla tal como te llegó (mejor que una foto a la pantalla). Podés elegir varias juntas, por ejemplo hábiles y domingo: la app reconoce la línea, el tipo de día, cada parada y cada horario, y te muestra la tabla para revisar antes de guardar. No hace falta ninguna clave.'),
       h('button', { class: 'btn', onclick: () => nuevaAMano(raiz, repintar) }, '＋ Nueva planilla a mano'), fotos, importar),
     h('h2', { class: 'sec' }, `Planillas guardadas (${orden.length})`),
     ...orden.map(pl => h('section', { class: 'panel' },

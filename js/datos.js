@@ -15,7 +15,7 @@ export const CFG_DEFECTO = {
   pasoMin: 72,          // metros por minuto caminando
   factorCaminata: 1.4,  // la calle no es línea recta
   gpsPreparate: 1200, gpsTimbre: 450, gpsBajar: 90,
-  apiKey: '', modelo: 'claude-opus-5-5',
+  lector: 'telefono', apiKey: '', modelo: 'claude-opus-5-5',
   // Horarios que conozco de memoria: valen más que la interpolación.
   reglas: [
     { linea: '6', sentido: 'ida', nombre: 'Mi esquina (Del Castillo y Los Chañares)', lat: MI_PARADA.lat, lon: MI_PARADA.lon, punto: 'facultad', mas: 5, nota: 'Mi esquina = salida de Facultad + 5 min' },

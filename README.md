@@ -5,7 +5,7 @@ App web instalable (PWA) para saber **qué colectivo tomar** entre Oro Verde y P
 - **Planear**: decís de dónde a dónde vas y a qué hora tenés que estar (por ejemplo, a qué hora sale tu micro de la Terminal). Te muestra el colectivo recomendado, el anterior y uno "muy justo", con la hora para estar en la parada, la hora de bajada y la caminata. Si no sabés si corre horario hábil o de domingo, te muestra las dos opciones.
 - **En viaje**: pasos con cuenta regresiva, botón "Ya subí" que recalcula todo con la hora real, y aviso de bajada por GPS ("Preparate" → "Tocá el timbre" → "Bajate acá") con sonido, vibración y pantalla siempre prendida. Sin GPS, avisa por horario.
 - **Líneas**: recorrido y paradas de cada línea, tomados de [Paraná Online](https://www.paranaonline.com.ar/colectivos-parana/).
-- **Planillas**: horarios guardados en el teléfono. Se cargan a mano o **desde una foto** (la lee la API de Anthropic con tu propia clave) y se revisan antes de guardar: la app marca las celdas que no cierran con el resto de la planilla.
+- **Planillas**: horarios guardados en el teléfono. Se cargan **desde la imagen de la planilla** o a mano. La app lee la imagen en el propio teléfono (sin clave, sin costo y sin enviarla a ningún lado): reconoce la línea, el tipo de día, cada parada (columna) y cada horario, ubica las columnas en el recorrido y muestra la tabla para revisar antes de guardar, marcando las celdas que no cierran con el resto. Opcionalmente puede leerla la API de Anthropic con tu propia clave (útil para fotos torcidas o borrosas).
 - Funciona **sin conexión** con lo que ya está guardado.
 
 ## Instalar en Android
@@ -31,3 +31,10 @@ node tools/actualizar.mjs # vuelve a leer recorridos y paradas
 ```
 
 Esta app no tiene relación con ERSA ni con Paraná Online. Los horarios dependen de la empresa: ante la duda, llegá antes a la parada.
+
+## Lectura de planillas desde imágenes
+
+- `js/ocr.js` agranda la imagen y la pasa por Tesseract (en `vendor/tesseract/`, se descarga la primera vez que se usa, unos 6 MB, y queda guardado para usarlo sin conexión).
+- `js/tabla.js` arma la tabla con las palabras reconocidas: agrupa los horarios en filas y columnas, toma los encabezados como nombres de parada, lee del título la línea, el tipo de día y la vigencia, y vuelve a mirar de cerca las celdas vacías o dudosas.
+- `node tools/probar.mjs` lo prueba con lo reconocido de las dos planillas reales de la línea 6 (`tools/muestras/`): 516 y 215 horarios, todos iguales a la transcripción revisada a mano.
+- Anda bien con la imagen original de la planilla. Con una foto torcida, con sombras o sacada a una pantalla puede fallar: las celdas dudosas quedan en amarillo y las ilegibles en rojo.

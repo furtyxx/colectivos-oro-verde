@@ -49,7 +49,7 @@ export function tipoDeDia(iso) {
 // ---------- planillas ----------
 const ALIAS = [
   ['facultad', /^fac/], ['escalberdi', /^esc/], ['inta', /\binta\b/], ['km5', /km\s*5/], ['virgen', /virgen/],
-  ['terminal', /terminal/], ['cruzsur', /cruz/], ['plazaalberdi', /plaza\s*alb/], ['lapridacordoba', /laprida.*cordob/], ['25mayo9julio', /25.*mayo/],
+  ['terminal', /terminal/], ['cruzsur', /cruz/], ['plazaalberdi', /plaza\s*alb/], ['lapridacordoba', /laprida/], ['25mayo9julio', /25.*mayo|mayo.*9|9.*julio/],
 ];
 export function claveDePunto(nombre) {
   const n = sinAcentos(nombre).replace(/\s+/g, ' ').trim();
