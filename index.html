@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="es-AR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Colectivos Oro Verde ⇄ Paraná</title>
+  <meta name="description" content="Planificador de viajes en las líneas 6 y 15 entre Oro Verde y Paraná, con aviso de bajada por GPS.">
+  <meta name="theme-color" content="#14532d">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header class="barra">
+    <h1 id="titulo">Oro Verde ⇄ Paraná</h1>
+    <span id="estado-red" class="chip" hidden>sin conexión</span>
+  </header>
+
+  <main id="vista" tabindex="-1"><p class="cargando">Cargando…</p></main>
+
+  <nav class="tabs" aria-label="Secciones">
+    <a href="#planear" data-tab="planear"><span class="ico">🧭</span>Planear</a>
+    <a href="#vivo" data-tab="vivo"><span class="ico">🚌</span>En viaje</a>
+    <a href="#lineas" data-tab="lineas"><span class="ico">📍</span>Líneas</a>
+    <a href="#planillas" data-tab="planillas"><span class="ico">🗓️</span>Planillas</a>
+    <a href="#ajustes" data-tab="ajustes"><span class="ico">⚙️</span>Ajustes</a>
+  </nav>
+
+  <div id="alerta" class="alerta" hidden role="alert" aria-live="assertive"></div>
+  <div id="toast" class="toast" hidden role="status"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

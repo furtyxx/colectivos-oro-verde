@@ -1,0 +1,9 @@
+{
+  "name": "colectivos-oro-verde",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "probar": "node tools/probar.mjs",
+    "actualizar": "node tools/actualizar.mjs"
+  }
+}

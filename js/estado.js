@@ -1,0 +1,69 @@
+// Estado guardado en el dispositivo (localStorage) y datos de recorridos.
+import { CFG_DEFECTO, LUGARES_DEFECTO, PRECARGADAS } from './datos.js';
+import { resolverColumnas } from './motor.js';
+
+const CLAVE = 'ov.estado.v1';
+
+/** Lo que se guarda: ajustes, lugares, planillas, viaje en curso y último plan. */
+export const E = { cfg: {}, lugares: [], planillas: [], borradas: [], viaje: null, plan: {} };
+/** Datos de solo lectura generados por tools/actualizar.mjs */
+export const D = { lineas: [], generado: null, cambios: null, calles: null };
+
+export function cargarEstado() {
+  let g = {};
+  try { g = JSON.parse(localStorage.getItem(CLAVE) || '{}'); } catch { /* estado roto: arranco limpio */ }
+  E.cfg = { ...structuredClone(CFG_DEFECTO), ...(g.cfg || {}) };
+  E.lugares = g.lugares?.length ? g.lugares : structuredClone(LUGARES_DEFECTO);
+  E.planillas = g.planillas || [];
+  E.borradas = g.borradas || [];
+  for (const p of PRECARGADAS) {
+    const i = E.planillas.findIndex(x => x.id === p.id);
+    if (i < 0) { if (!E.borradas.includes(p.id)) E.planillas.push(structuredClone(p)); }
+    else if (!E.planillas[i].editada && (E.planillas[i].ver || 0) < p.ver) E.planillas[i] = structuredClone(p);
+  }
+  E.viaje = g.viaje || null;
+  E.plan = { origen: 'casa', destino: 'terminal', modo: 'llegar', tipo: 'auto', hora: '', fecha: '', ...(g.plan || {}) };
+}
+
+export function guardar() {
+  try { localStorage.setItem(CLAVE, JSON.stringify(E)); } catch { /* sin espacio o modo privado */ }
+}
+
+export async function cargarDatos() {
+  const j = await (await fetch('data/lineas.json')).json();
+  D.lineas = j.lineas; D.generado = j.generado;
+  // primero las que más uso
+  const pref = ['6', '15'];
+  D.lineas.sort((a, b) => (pref.indexOf(a.id) + 1 || 99) - (pref.indexOf(b.id) + 1 || 99));
+  try { D.cambios = await (await fetch('data/cambios.json')).json(); } catch { D.cambios = null; }
+}
+
+export async function cargarCalles() {
+  if (!D.calles) D.calles = (await (await fetch('data/calles.json')).json()).calles;
+  return D.calles;
+}
+
+export const linea = id => D.lineas.find(l => l.id === id);
+export const lugar = id => E.lugares.find(l => l.id === id);
+
+/** Columnas de una planilla ya ubicadas en el recorrido (con las correcciones manuales). */
+export function columnasDe(pl) {
+  const cols = resolverColumnas(linea(pl.linea), pl.nombres, pl.vueltaDesde ?? undefined);
+  for (const [i, n] of Object.entries(pl.anclas || {})) if (cols[i]) { cols[i].parada = n || null; cols[i].aprox = cols[i].dudoso = false; cols[i].manual = true; }
+  return cols;
+}
+export const planillasListas = () => E.planillas.map(p => ({ ...p, columnas: columnasDe(p) }));
+
+/** Agrega un lugar elegido en el buscador a "recientes" (o lo reusa). */
+export function recordarLugar(p) {
+  const ya = E.lugares.find(l => Math.abs(l.lat - p.lat) < 2e-4 && Math.abs(l.lon - p.lon) < 2e-4);
+  if (ya) return ya;
+  const nuevo = { id: 'l' + Date.now().toString(36), nombre: p.nombre, lat: p.lat, lon: p.lon, reciente: true };
+  E.lugares.push(nuevo);
+  const rec = E.lugares.filter(l => l.reciente);
+  if (rec.length > 8) E.lugares.splice(E.lugares.indexOf(rec[0]), 1);
+  guardar();
+  return nuevo;
+}
+
+export const cuandoLlega = 'https://cuandollega.smartmovepro.net/parana';

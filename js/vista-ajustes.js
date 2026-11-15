@@ -1,0 +1,74 @@
+// Pestaña "Ajustes".
+import { h, toast, confirmar, hoyISO, poner } from './ui.js';
+import { E, D, guardar } from './estado.js';
+import { CFG_DEFECTO, LUGARES_DEFECTO, PRECARGADAS } from './datos.js';
+import { probarSonido } from './vista-vivo.js';
+import { abrirBuscador } from './buscador.js';
+
+let instalar = null; // evento beforeinstallprompt
+window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); instalar = e; });
+
+export function vistaAjustes(raiz) {
+  const repintar = () => vistaAjustes(raiz);
+  const c = E.cfg;
+  const num = (clave, etiqueta, min, max) => h('label', { class: 'campo' }, etiqueta,
+    h('input', { type: 'number', inputMode: 'numeric', min, max, value: c[clave], onchange: e => { const v = +e.target.value; c[clave] = Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : CFG_DEFECTO[clave]; e.target.value = c[clave]; guardar(); } }));
+  const instalada = matchMedia('(display-mode: standalone)').matches;
+
+  poner(raiz, 
+    h('section', { class: 'panel' }, h('h2', {}, 'Horarios'),
+      num('adelanto', 'El colectivo puede pasar hasta … minutos antes', 0, 30),
+      num('margen', 'Margen por defecto antes del micro (min)', 0, 180),
+      h('h2', { style: 'margin-top:6px' }, 'Horarios que conozco'),
+      h('p', { class: 'suave chico' }, 'Valen más que el cálculo automático entre puntos de la planilla.'),
+      ...c.reglas.map(r => h('label', { class: 'campo' }, `${r.nombre || 'Parada'} (línea ${r.linea}, ${r.sentido}): minutos después de "${{ facultad: 'Facultad', cruzsur: 'Américas y Cruz Sur' }[r.punto] || r.punto}"`,
+        h('input', { type: 'number', inputMode: 'numeric', min: 0, max: 60, value: r.mas, onchange: e => { r.mas = Math.max(0, +e.target.value || 0); guardar(); } })))),
+
+    h('section', { class: 'panel' }, h('h2', {}, 'Caminata'),
+      num('radioOrigen', 'Hasta cuántos metros camino para tomar el colectivo', 100, 3000),
+      num('radioDestino', 'Hasta cuántos metros camino al bajar', 100, 3000),
+      num('pasoMin', 'Mi paso (metros por minuto; 72 ≈ 4,3 km/h)', 40, 120)),
+
+    h('section', { class: 'panel' }, h('h2', {}, 'Aviso de bajada por GPS'),
+      num('gpsPreparate', '"Preparate" a … metros de la parada', 300, 5000),
+      num('gpsTimbre', '"Tocá el timbre" a … metros', 150, 2000),
+      num('gpsBajar', '"Bajate acá" a … metros', 30, 400),
+      h('button', { class: 'btn', onclick: probarSonido }, '🔊 Probar sonido y vibración'),
+      h('p', { class: 'suave chico' }, 'Para que suene, el teléfono no tiene que estar en silencio y la app tiene que quedar abierta en pantalla (se mantiene prendida sola).')),
+
+    h('section', { class: 'panel' }, h('h2', {}, 'Mis lugares'),
+      h('ul', { class: 'lista' }, E.lugares.map(l => h('li', {}, h('div', { class: 'fila', style: 'padding:6px 0' },
+        h('input', { class: 'crece', value: l.nombre, 'aria-label': 'Nombre del lugar', onchange: e => { l.nombre = e.target.value.trim() || l.nombre; delete l.reciente; guardar(); } }),
+        h('button', { class: 'btn mini peligro', disabled: E.lugares.length <= 2, 'aria-label': `Borrar ${l.nombre}`, onclick: () => { E.lugares.splice(E.lugares.indexOf(l), 1); guardar(); repintar(); } }, 'Borrar'))))),
+      h('button', { class: 'btn', onclick: () => abrirBuscador('Agregar lugar', p => {
+        if (p.id === '__gps') p = { ...p, nombre: 'Lugar guardado ' + hoyISO() };
+        if (!E.lugares.some(l => l.id === p.id)) E.lugares.push({ id: 'l' + Date.now().toString(36), nombre: p.nombre, lat: p.lat, lon: p.lon });
+        guardar(); repintar();
+      }) }, '＋ Agregar lugar'),
+      h('p', { class: 'suave chico' }, '"Mi parada" es la esquina donde tomás el colectivo. Para cambiarla, agregá el lugar nuevo y borrá el viejo.')),
+
+    h('section', { class: 'panel' }, h('h2', {}, 'Leer planillas desde fotos'),
+      h('label', { class: 'campo' }, 'API key de Anthropic (se guarda solo en este teléfono)',
+        h('input', { type: 'password', autocomplete: 'off', value: c.apiKey, placeholder: 'sk-ant-…', onchange: e => { c.apiKey = e.target.value.trim(); guardar(); toast(c.apiKey ? 'Clave guardada en este dispositivo' : 'Clave borrada'); } })),
+      h('label', { class: 'campo' }, 'Modelo', h('input', { value: c.modelo, autocomplete: 'off', onchange: e => { c.modelo = e.target.value.trim() || CFG_DEFECTO.modelo; e.target.value = c.modelo; guardar(); } })),
+      h('p', { class: 'suave chico' }, 'La clave se crea en console.anthropic.com. La foto se envía a Anthropic solo cuando tocás "Leer planilla desde foto", y cada lectura se cobra en tu cuenta.')),
+
+    h('section', { class: 'panel' }, h('h2', {}, 'Instalar en el teléfono'),
+      instalada ? h('p', { class: 'nota bien' }, 'Ya la estás usando como app instalada.')
+        : instalar ? h('button', { class: 'btn pri', onclick: async () => { instalar.prompt(); await instalar.userChoice; instalar = null; repintar(); } }, 'Instalar la app')
+          : h('p', { class: 'suave' }, 'En Chrome para Android: menú ⋮ → "Agregar a la pantalla principal" → "Instalar". Después funciona sin conexión con las planillas guardadas.')),
+
+    h('section', { class: 'panel' }, h('h2', {}, 'Datos'),
+      h('p', { class: 'suave chico' }, `Recorridos: ${D.lineas.length} líneas de Paraná Online (${D.lineas.map(l => l.id).join(', ')}). Calles: © colaboradores de OpenStreetMap. Paraná Online y ERSA no tienen relación con esta app.`),
+      h('div', { class: 'fila' },
+        h('button', { class: 'btn mini', onclick: async () => {
+          if (!(await confirmar('¿Volver a poner las planillas precargadas de la línea 6 (hábiles y domingo) como vinieron? Se pierden los cambios que les hayas hecho.', 'Restaurar'))) return;
+          E.planillas = E.planillas.filter(p => !PRECARGADAS.some(x => x.id === p.id || (p.linea === x.linea && p.tipo === x.tipo)));
+          E.planillas.push(...structuredClone(PRECARGADAS)); E.borradas = []; guardar(); toast('Planillas restauradas');
+        } }, 'Restaurar planillas precargadas'),
+        h('button', { class: 'btn mini peligro', onclick: async () => {
+          if (!(await confirmar('¿Borrar todos los ajustes, lugares y planillas guardados en este teléfono?', 'Borrar todo'))) return;
+          localStorage.clear(); location.reload();
+        } }, 'Borrar todo'))));
+  void LUGARES_DEFECTO;
+}
