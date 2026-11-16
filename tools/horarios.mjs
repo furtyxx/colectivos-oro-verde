@@ -144,6 +144,32 @@ export function encadenar(nodos) {
 }
 
 /** Un servicio es creíble si sus horarios no retroceden y no hace falta más de ~85 km/h para cumplirlos (si no, se mezclaron dos colectivos). */
+/** ¿Puede el mismo colectivo pasar por la parada a (hora ta, metro ma) y después por la b? */
+function compatibles(ta, ma, tb, mb) {
+  const dt = tb - ta, km = (mb - ma) / 1000;
+  if (dt < -1 || (km > 0.5 && dt <= 0)) return false;                      // no retrocede en el tiempo
+  if (dt > 0 && km > 0.4 && km / dt * 60 > 85) return false;              // no vuela (más de 85 km/h)
+  if (dt > 3 + Math.max(0, km) * 7) return false;                         // ni se arrastra (menos de ~8 km/h)
+  return true;
+}
+
+/**
+ * Limpia un servicio: si alguna parada quedó mal ubicada (o es de otro colectivo), saca SOLO esas celdas y se queda
+ * con la secuencia más larga de paradas que el mismo colectivo puede cumplir. Antes se descartaba el servicio entero,
+ * y así se perdían colectivos en el mapa.
+ */
+export function depurar(fila, nodos) {
+  const idx = fila.map((t, k) => (t != null ? k : -1)).filter(k => k >= 0);
+  const n = idx.length, mejor = new Array(n).fill(1), prev = new Array(n).fill(-1);
+  for (let i = 0; i < n; i++) for (let j = 0; j < i; j++) {
+    const a = idx[j], b = idx[i];
+    if (mejor[j] + 1 > mejor[i] && compatibles(fila[a], nodos[a].m, fila[b], nodos[b].m)) { mejor[i] = mejor[j] + 1; prev[i] = j; }
+  }
+  let fin = 0; for (let i = 1; i < n; i++) if (mejor[i] > mejor[fin]) fin = i;
+  const quedan = new Set(); for (let i = n ? fin : -1; i >= 0; i = prev[i]) quedan.add(idx[i]);
+  return fila.map((t, k) => (quedan.has(k) ? t : null));
+}
+
 export function verosimil(fila, nodos) {
   const ps = fila.map((t, k) => (t != null ? [t, nodos[k].m] : null)).filter(Boolean);
   for (let i = 1; i < ps.length; i++) {
@@ -169,6 +195,31 @@ export function colocar(nombre, pts, geo, urbana = false) {
     if (mejor) return mejor;
   }
   return null;
+}
+
+/**
+ * ¿El cartel nombra el destino de ese sentido? "[A CASA DE GOBIERNO]" con "Facultad → Casa de Gobierno" da +1;
+ * si nombra el origen da -1. Ayuda a no confundir ida con vuelta cuando las paradas solas no alcanzan.
+ */
+function afinidad(cartel, S) {
+  const pal = t => new Set(t.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().replace(/[^A-Z0-9]+/g, ' ').split(' ').filter(w => w.length >= 3 && !['DEL', 'LAS', 'LOS', 'RAMAL', 'IDA', 'VUELTA'].includes(w)));
+  // abreviaturas de los carteles: "C.GOB", "E.ALB", "S.BENITO", "COLONIAC.GOBIERNO"
+  const c = cartel.replace(/^[|]$/g, '').toUpperCase()
+    .replace(/C.s*GOB(IERNO)?/g, ' CASA GOBIERNO ').replace(/E.s*ALB(ERDI)?/g, ' ESCUELA ALBERDI ').replace(/S.s*BENITO/g, ' SAN BENITO ')
+    .replace(/COL.s*/g, 'COLONIA ').replace(/s+/g, ' ').trim();
+  // "FACULTAD A C.GOB" = de Facultad a Casa de Gobierno; "A ORO VERDE" / "AL INTA" = hacia ahí
+  const m = /^(?:(.*?)s+)?AL?s+(.+)$/.exec(c);
+  const origen = pal(m ? m[1] || '' : ''), destino = pal(m ? m[2] : c);
+  const toca = (set, trozo) => [...pal(trozo)].some(w => set.has(w) || [...set].some(x => x.length >= 5 && (x.startsWith(w) || w.startsWith(x))));
+  let v = 0;
+  for (const d of [S.desc, ...S.ramales.map(r => r.desc)].filter(Boolean)) {
+    const p = d.split(/s*(?:→|>)s*/);
+    if (p.length < 2) continue;
+    const ini = p[0], fin = p[p.length - 1];
+    const x = (toca(destino, fin) ? 1 : 0) - (toca(destino, ini) ? 1 : 0) + (toca(origen, ini) ? 1 : 0) - (toca(origen, fin) ? 1 : 0);
+    if (Math.abs(x) > Math.abs(v)) v = x;
+  }
+  return Math.max(-1, Math.min(1, v));
 }
 
 const VEL_ESTIMADA = 330;   // metros por minuto (~20 km/h) para pasar de una diferencia de horario a una distancia
@@ -240,20 +291,32 @@ export function derivar(crudo, linea, geo = null) {
             const u = colocar(p.nombre, R.pts, geo, !!servicio);
             if (u) extras.push({ pid: p.pid, nombre: p.nombre, horas: p.horas, n: 1000 + extras.length, m: u.m, lat: u.lat, lon: u.lon, extra: true });
           }
-          // las que tampoco se pueden ubicar por nombre: por su horario respecto de las ya ubicadas
-          const resueltos = [...base, ...extras];
-          if (resueltos.length >= 2) for (const p of delSentido) {
-            if (resueltos.some(x => x.pid === p.pid)) continue;
-            const u = colocarPorHorario(p, resueltos, R.largo || 1e9);
-            if (u) { const [la, lo] = puntoEnRecorrido(R.pts, u.m); extras.push({ pid: p.pid, nombre: p.nombre, horas: p.horas, n: 1000 + extras.length, m: u.m, lat: la, lon: lo, extra: true, aprox: true }); }
-          }
+          // el sentido y el ramal se eligen SOLO con las paradas ubicadas por su lugar (mapa o cruce de calles): si se
+          // eligieran también con las ubicadas por horario, cualquier cartel "encajaría" en cualquier sentido
           const nodos = [...base, ...extras].sort((a, b) => a.m - b.m);
           if (nodos.length < 2) return;
-          const filas = encadenar(nodos).filter(f => verosimil(f, nodos));
+          const filas = encadenar(nodos).map(f => depurar(f, nodos)).filter(f => f.filter(x => x != null).length >= 2);
           // puntaje: horarios que quedaron dentro de algún servicio de varias paradas
-          const unidos = filas.reduce((s, f) => s + f.filter(x => x != null).length, 0);
-          if (!mejor || unidos > mejor.unidos) mejor = { sentido, ramal: ri, nodos, filas, unidos };
+          const unidos = filas.reduce((s, f) => s + f.filter(x => x != null).length - 1, 0);   // tramos entre paradas consecutivas del mismo colectivo
+          const puntaje = unidos + afinidad(cartel, S) * Math.max(10, unidos * 0.5);
+          if (!mejor || puntaje > mejor.puntaje) mejor = { sentido, ramal: ri, R, delSentido, nodos, filas, unidos, puntaje };
         });
+      }
+      if (mejor) {
+        // ya con el sentido elegido, sumo las paradas que solo se pueden ubicar por su horario y rearmo los servicios
+        const extrasH = [];
+        for (const p of mejor.delSentido) {
+          if (mejor.nodos.some(x => x.pid === p.pid)) continue;
+          const u = colocarPorHorario(p, mejor.nodos, mejor.R.largo || 1e9);
+          if (u) { const [la, lo] = puntoEnRecorrido(mejor.R.pts, u.m); extrasH.push({ pid: p.pid, nombre: p.nombre, horas: p.horas, m: u.m, lat: la, lon: lo, extra: true, aprox: true }); }
+        }
+        if (extrasH.length) {
+          let k = 1000 + mejor.nodos.filter(x => x.extra).length;
+          for (const x of extrasH) x.n = k++;
+          const nodos = [...mejor.nodos, ...extrasH].sort((a, b) => a.m - b.m);
+          const filas = encadenar(nodos).map(f => depurar(f, nodos)).filter(f => f.filter(x => x != null).length >= 2);
+          if (filas.reduce((s, f) => s + f.filter(x => x != null).length - 1, 0) >= mejor.unidos) { mejor.nodos = nodos; mejor.filas = filas; }
+        }
       }
       if (!mejor || !mejor.filas.length) continue;
       const b = { cartel, sentido: mejor.sentido, ramal: mejor.ramal, paradas: mejor.nodos.map(x => x.n), filas: mejor.filas };

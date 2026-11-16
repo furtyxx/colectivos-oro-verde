@@ -476,7 +476,9 @@ export function busesEnVivo({ lineas, horarios, tipo, ahora: ahora0, ids = null 
       }
     }
   }
-  return out;
+  // un colectivo estimado "en camino" que cae encima de otro de la misma línea y sentido es el mismo coche visto en
+  // dos pedazos de horario: me quedo con el que está ubicado entre dos paradas con horario
+  return out.filter(b => !b.estimadoAtras || !out.some(o => o !== b && !o.estimadoAtras && o.linea === b.linea && o.sentido === b.sentido && o.ramal === b.ramal && Math.abs(o.m - b.m) < 600));
 }
 
 // ---------- viajes con trasbordo (más de una subida) ----------

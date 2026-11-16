@@ -389,6 +389,16 @@ console.log('Paradas del sitio que el mapa de la línea no trae');
   const v = H.colocarPorHorario({ pid: 'x', horas: [605, 665, 725] }, resueltos, 20000);
   ok(v && v.aprox && v.m >= 1000 + 5 * 330 - 5 && v.m <= 1000 + 5 * 330 + 5, 'por horario: 5 minutos después de la parada de 1000 m queda a ~2650 m');
   ok(H.colocarPorHorario({ pid: 'y', horas: [1, 2, 3] }, resueltos, 20000) === null, 'por horario: si no se parece a ninguna, no se ubica');
+  // una parada mal ubicada no tira el servicio entero: solo se saca esa celda
+  const nodos = [0, 1000, 2000, 3000, 4000, 5000].map(m => ({ m }));
+  const limpia = H.depurar([600, 603, 606, 540, 612, 615], nodos);
+  ok(limpia.join() === '600,603,606,,612,615', 'un horario que no cierra (9:00 entre 10:06 y 10:12) se saca y el resto del servicio queda');
+  ok(H.depurar([600, 603], nodos.slice(0, 2)).join() === '600,603' && H.depurar([600, null, 590], [{ m: 0 }, { m: 1 }, { m: 3000 }]).filter(x => x != null).length === 1, 'si solo queda una parada creíble, no alcanza para un servicio');
+  // sentido de cada cartel: la línea 6 hábil no confunde ida con vuelta
+  const crudo6 = JSON.parse(fs.readFileSync(path.join(raiz, 'data/horarios/crudo/6.json'), 'utf8'));
+  const der6 = H.derivar(crudo6, L('6'), geo);
+  const sentidoDe = c => Object.values(der6).flatMap(T => T.bloques).filter(b => b.cartel === c).map(b => b.sentido);
+  ok(sentidoDe('[FACULTAD A C.GOB]').every(x => x === 'ida') && sentidoDe('[A ORO VERDE]').every(x => x === 'vuelta') && sentidoDe('[A ORO VERDE]').length, 'línea 6: "FACULTAD A C.GOB" es ida y "A ORO VERDE" es vuelta');
 }
 
 console.log(fallas ? `\n${fallas} PRUEBA(S) FALLARON` : '\nTodo OK');
