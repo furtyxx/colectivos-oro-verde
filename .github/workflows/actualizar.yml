@@ -1,10 +1,8 @@
 name: Actualizar recorridos
 
-# Todos los días revisa las páginas de Paraná Online y, si cambió algún recorrido o parada,
-# guarda los datos nuevos (la app los toma sola la próxima vez que se abre con conexión).
+# Recorridos y paradas de todas las líneas desde Paraná Online. Normalmente lo hace solo el trabajo
+# "Juntar horarios" una vez por día; esto sirve para forzarlo a mano.
 on:
-  schedule:
-    - cron: '30 7 * * *'   # 04:30 de Argentina
   workflow_dispatch:
 
 permissions:
@@ -17,7 +15,7 @@ concurrency:
 jobs:
   actualizar:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -31,5 +29,5 @@ jobs:
         run: |
           git config user.name "actualizador-automatico"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/lineas.json data/cambios.json data/horarios.json
+          git add data/lineas.json data/cambios.json data/horarios.json data/historial
           git diff --cached --quiet || (git commit -m "Datos: revisión automática de recorridos" && git pull --rebase && git push)

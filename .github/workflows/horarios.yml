@@ -1,35 +1,40 @@
 name: Juntar horarios
 
-# Cada media hora mira qué colectivos anuncia Paraná Online para cada parada en las próximas dos horas y los
-# va sumando a data/horarios/. Con un día entero de cada tipo (hábil, sábado, domingo) queda el horario
-# completo de todas las líneas. Solo guarda cuando aparece algo nuevo.
+# Paraná Online solo muestra, para cada parada, los colectivos de las próximas ~2 horas. Este trabajo corre casi
+# 6 horas seguidas leyendo las líneas cada 5 minutos, va sumando los horarios a data/horarios/ y, cada hora,
+# sube los datos (y el historial en data/historial/). Al terminar se vuelve a lanzar solo, así queda andando
+# todo el día. Una vez por día también actualiza recorridos y paradas (tools/actualizar.mjs).
+# El horario programado es una red de seguridad por si la cadena se llega a cortar.
 on:
   schedule:
-    - cron: '5,35 7-23 * * *'   # 04:05 a 20:35 de Argentina
-    - cron: '5,35 0-3 * * *'    # 21:05 a 00:35 de Argentina
+    - cron: '17 */3 * * *'
   workflow_dispatch:
+    inputs:
+      minutos:
+        description: 'Cuántos minutos corre antes de volver a lanzarse'
+        default: '335'
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
-  group: actualizar
+  group: horarios
   cancel-in-progress: false
 
 jobs:
   horarios:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 355
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Tomar una muestra de horarios
-        run: node tools/horarios.mjs
-      - name: Guardar si hubo novedades
-        run: |
-          git config user.name "actualizador-automatico"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/horarios data/horarios.json
-          git diff --cached --quiet || (git commit -m "Datos: horarios de Paraná Online" && git pull --rebase && git push)
+      - name: Leer las líneas cada 5 minutos
+        run: node tools/horarios.mjs --bucle --minutos=${{ inputs.minutos || 335 }} --publicar
+      - name: Volver a lanzar (para que no se corte)
+        if: always()
+        run: gh workflow run horarios.yml

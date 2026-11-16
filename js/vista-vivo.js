@@ -1,27 +1,58 @@
 // Pestaña "En viaje": pasos con cuenta regresiva, "Ya subí", avisos de bajada por GPS (o por horario).
 import { h, $, toast, fmtM, hoyISO, gmapsAPie, mapa, confirmar, poner } from './ui.js';
-import { E, guardar, linea, cuandoLlega } from './estado.js';
+import { E, D, guardar, linea, cuandoLlega, calleListas, cargarCalles, busesAhora, busesParaMapa, LEYENDA_BUS } from './estado.js';
 import { aHora, dist, proyectar } from './motor.js';
 
 const ORDEN = { nada: 0, prep: 1, timbre: 2, bajar: 3, caminando: 4, fin: 5 };
 const R = { mapaBox: null, fix: null, gpsError: '', watch: null, lock: null, audio: null, reloj: null, alarma: null, silenciada: {}, raiz: null };
 
 // ---------- crear / terminar ----------
-export function iniciarViaje(v, ctx) {
+/** Datos de un tramo de viaje (un colectivo). destino = adónde se camina al bajar: el destino final o la parada del próximo colectivo. */
+function armarTramo(v, ctx, origenNombre, destino) {
   const corta = s => ({ n: s.n, nombre: s.nombre, lat: s.lat, lon: s.lon });
-  E.viaje = {
+  return {
     id: Date.now(), fecha: ctx.fecha, linea: v.op.linea.id, lineaNombre: v.op.linea.nombre, sentido: v.op.sentido, ri: v.op.ri, desc: v.op.desc,
     sube: corta(v.op.sube), baja: corta(v.op.baja),
-    origen: { nombre: ctx.origen.nombre }, destino: { nombre: ctx.destino.nombre, lat: ctx.destino.lat, lon: ctx.destino.lon },
+    origen: { nombre: origenNombre }, destino: { nombre: destino.nombre, lat: destino.lat, lon: destino.lon },
     salida: v.salida, tSalir: v.tSalir, tParada: v.tParada, tSube: v.tSube, tBaja: v.tBaja, tLlega: v.tLlega,
     minOrigen: v.op.minOrigen, minDestino: v.op.minDestino, mDestino: v.op.mDestino,
     refs: v.refs.filter(r => r.t > v.tSube && r.t < v.tBaja), micro: ctx.micro ?? null,
     subeExacto: v.subeExacto, bajaExacto: v.bajaExacto, dudoso: v.dudoso,
-    avisos: false, subiReal: null, bajeReal: null, etapa: 'nada',
+    avisos: false, subiReal: null, bajeReal: null, etapa: 'nada', siguientes: [], tramo: { i: 1, de: 1 },
   };
+}
+
+export function iniciarViaje(v, ctx) {
+  E.viaje = armarTramo(v, ctx, ctx.origen.nombre, ctx.destino);
   guardar();
   location.hash = '#vivo';
   toast('Viaje guardado. Cuando salgas, activá los avisos.');
+}
+
+/** Viaje con trasbordo: r = una ruta de planificarRutas. Arranca con el primer colectivo y deja los otros para después. */
+export function iniciarRuta(r, ctx) {
+  const sv = r.servicios, n = sv.length;
+  const tramos = sv.map((v, i) => {
+    const sig = sv[i + 1];
+    const dest = sig ? { nombre: `parada ${sig.op.sube.nombre} (para la ${sig.op.linea.nombre})`, lat: sig.op.sube.lat, lon: sig.op.sube.lon } : ctx.destino;
+    const t = armarTramo(v, ctx, i ? sv[i - 1].op.baja.nombre : ctx.origen.nombre, dest);
+    t.tramo = { i: i + 1, de: n }; t.id += i; t.micro = i === n - 1 ? ctx.micro ?? null : null;
+    return t;
+  });
+  const [primero, ...resto] = tramos;
+  E.viaje = { ...primero, siguientes: resto };
+  guardar();
+  location.hash = '#vivo';
+  toast(`Viaje de ${n} colectivos guardado. Cuando salgas, activá los avisos.`);
+}
+
+/** Terminé un tramo y paso al próximo colectivo del viaje. */
+function seguirTramo() {
+  const V = E.viaje, [prox, ...resto] = V.siguientes || [];
+  if (!prox) return;
+  pararAlarma(); $('#alerta').hidden = true;
+  E.viaje = { ...prox, siguientes: resto, avisos: V.avisos, id: prox.id };
+  R.silenciada = {}; guardar(); pintar();
 }
 
 async function terminar() {
@@ -108,7 +139,7 @@ function apagar() {
   clearInterval(R.reloj); R.reloj = null;
   pararAlarma(); $('#alerta').hidden = true;
 }
-function arrancarReloj() { if (!R.reloj) R.reloj = setInterval(() => { evaluar(); refrescar(); }, 1000); }
+function arrancarReloj() { let n = 0; if (!R.reloj) R.reloj = setInterval(() => { evaluar(); refrescar(); if (++n % 15 === 0) pintarMapa(); }, 1000); } // el mapa se repinta cada 15 s para mover los colectivos
 
 // ---------- avisos ----------
 const PATRON = { prep: [200, 100, 200], timbre: [400, 150, 400, 150, 400, 150, 400], bajar: [700, 150, 700, 150, 700, 150, 1000] };
@@ -231,7 +262,9 @@ function pintarMapa() {
       prox && h('span', {}, `Próxima parada: ${prox.nombre}`),
       hasta != null && hasta >= -80 && h('span', {}, `Faltan ${faltan.filter(s => s.n <= V.baja.n).length} paradas (${fmtM(Math.max(0, hasta))}) para bajar en ${V.baja.nombre}`));
   }
-  poner(box, mapa({ rutas: [pts], paradas: S.paradas, marcas }), h('div', { class: 'posicion' }, ...info.filter(Boolean)));
+  if (!D.calles) { cargarCalles().catch(() => {}); calleListas.addEventListener('listas', pintarMapa, { once: true }); }
+  const buses = busesAhora([V.linea]);   // los colectivos de esta línea, estimados con los horarios
+  poner(box, mapa({ clave: 'viaje-' + V.id, calles: D.calles, rutas: [pts], paradas: S.paradas, marcas, buses: busesParaMapa(buses), leyenda: buses.length ? LEYENDA_BUS.map(([t, c]) => h('span', {}, h('i', { style: `background:${c}` }), t)) : null }), h('div', { class: 'posicion' }, ...info.filter(Boolean)));
 }
 
 function refrescar() { // actualiza solo números que cambian cada segundo
@@ -240,7 +273,7 @@ function refrescar() { // actualiza solo números que cambian cada segundo
   const { L, iAhora, t } = pasos();
   const prox = L[iAhora], num = $('.cuenta .num', raiz), cap = $('.cuenta .cap', raiz), gps = $('#gps-linea', raiz);
   if (num && cap) {
-    if (V.etapa === 'fin') { num.textContent = '✓'; cap.textContent = 'Llegaste'; }
+    if (V.etapa === 'fin') { num.textContent = '✓'; cap.textContent = V.siguientes?.length ? 'Llegaste a la parada del próximo colectivo' : 'Llegaste'; }
     else if (!prox) { num.textContent = '✓'; cap.textContent = 'Ya pasaron todos los horarios'; }
     else { num.textContent = falta(prox.t - t); cap.textContent = `${prox.t >= t ? 'para' : 'desde'}: ${prox.txt} (${aHora(prox.t)})`; }
   }
@@ -273,9 +306,11 @@ function pintar() {
   if (V.subiReal == null) acciones.push(h('button', { class: 'btn grande' + (V.avisos ? ' pri' : ''), onclick: yaSubi }, '🚌 Ya subí'));
   else if (V.bajeReal == null) acciones.push(h('button', { class: 'btn grande', onclick: yaBaje }, 'Ya bajé'));
   if (V.etapa === 'caminando' || V.etapa === 'fin') acciones.push(h('a', { class: 'btn grande pri', href: gmapsAPie(V.destino), target: '_blank', rel: 'noopener' }, `🚶 Cómo llegar a pie a ${V.destino.nombre}`));
+  if (V.siguientes?.length && (V.bajeReal != null || V.etapa === 'caminando' || V.etapa === 'fin')) acciones.push(h('button', { class: 'btn grande' + (V.etapa === 'fin' ? ' pri' : ''), onclick: seguirTramo }, `➡️ Ya estoy en la parada: seguir con la ${V.siguientes[0].lineaNombre}`));
 
   poner(raiz, 
     h('section', { class: 'panel' },
+      V.tramo?.de > 1 && h('p', { class: 'nota chico' }, `Colectivo ${V.tramo.i} de ${V.tramo.de}` + (V.siguientes?.length ? `. Después: ${V.siguientes.map(s => s.lineaNombre).join(' → ')}.` : '.')),
       h('div', { class: 'fila' }, h('span', { class: 'lin' }, V.lineaNombre), h('strong', { class: 'crece' }, `${V.origen.nombre} → ${V.destino.nombre}`)),
       h('p', { class: 'suave' }, `Servicio que sale de ${V.salida.nombre} a las ${aHora(V.salida.t)} · ${V.desc}`),
       otroDia && h('p', { class: 'nota ojo' }, `Este viaje es para el ${V.fecha.split('-').reverse().join('/')}.`),

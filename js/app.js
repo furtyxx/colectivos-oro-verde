@@ -1,6 +1,6 @@
 // Arranque: carga estado y datos, rutea las pestañas y registra el service worker.
 import { $, h } from './ui.js';
-import { cargarEstado, cargarDatos, E, guardar, recordarLugar } from './estado.js';
+import { cargarEstado, cargarDatos, cargarCalles, E, guardar, recordarLugar } from './estado.js';
 import { lugarDeTextoCompartido } from './buscador.js';
 import { dialogo, toast } from './ui.js';
 import { vistaPlanear } from './vista-planear.js';
@@ -39,6 +39,7 @@ async function iniciar() {
   if (E.viaje && !location.hash && !recibido()) location.hash = '#vivo';
   rutear();
   window.__listo = true; clearTimeout(window.__arranque);
+  cargarCalles().catch(() => {}); // las calles de fondo de los mapas se cargan después, sin frenar el arranque
   await atenderCompartido();
 }
 

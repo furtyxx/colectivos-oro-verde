@@ -332,14 +332,7 @@ export function planificar({ lineas, planillas = [], horarios = null, origen, de
   const opciones = opcionesDeViaje(lineas, origen, destino, cfg);
   const viajes = [], sinPlanilla = [];
   for (const op of opciones) {
-    // 1º los horarios que publica Paraná Online; las planillas solo completan lo que el sitio todavía no tiene
-    const T = horarios?.[op.linea.id]?.[tipo];
-    const delSitio = T ? viajesDeBloques(op, T, cfg) : [];
-    let deLaPlanilla = [];
-    if (cfg.usarPlanillas !== false && coberturaDe(T) < 0.85)
-      for (const pl of planillas.filter(p => p.linea === op.linea.id && p.tipo === tipo)) deLaPlanilla.push(...viajesDeOpcion(op, pl, cfg).map(v => ({ ...v, fuente: 'planilla' })));
-    deLaPlanilla = deLaPlanilla.filter(v => !delSitio.some(s => Math.abs(s.tSube - v.tSube) <= 4));
-    const todos = [...delSitio, ...deLaPlanilla];
+    const todos = serviciosDeOpcion(op, { planillas, horarios, tipo, cfg });
     if (todos.length) viajes.push(...todos); else sinPlanilla.push(op);
   }
   viajes.sort((a, b) => a.tSube - b.tSube || a.tLlega - b.tLlega);
@@ -402,4 +395,240 @@ export function buscarCalles(calles, texto, max = 6) {
     const t = c.t.reduce((a, b) => (b.length > a.length ? b : a)), p = t[Math.floor(t.length / 2)];
     return { nombre: c.n + ' (a mitad de la calle)', lat: p[0], lon: p[1], tipo: 'calle' };
   });
+}
+
+// ---------- buses estimados en el mapa ----------
+/** Punto {lat, lon} a m metros del comienzo de un recorrido (lista de [lat, lon]). */
+export function puntoEn(pts, m) {
+  let acum = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const a = { lat: pts[i - 1][0], lon: pts[i - 1][1] }, b = { lat: pts[i][0], lon: pts[i][1] }, l = dist(a, b);
+    if (acum + l >= m) { const t = l ? (m - acum) / l : 0; return { lat: a.lat + (b.lat - a.lat) * t, lon: a.lon + (b.lon - a.lon) * t }; }
+    acum += l;
+  }
+  const u = pts[pts.length - 1];
+  return { lat: u[0], lon: u[1] };
+}
+
+/** ¿Este sentido va hacia el centro (Casa de Gobierno)? Para pintar ida y vuelta de colores distintos. */
+export function haciaElCentro(linea, sentido) {
+  const partes = sinAcentos(linea.sentidos[sentido]?.desc || '').split(/\s*(?:→|>)\s*/);
+  const centro = s => /centro|casa de gobierno|c\.? ?gob/.test(s || '');
+  if (partes.length > 1) { if (centro(partes[partes.length - 1])) return true; if (centro(partes[0])) return false; }
+  return Object.keys(linea.sentidos).indexOf(sentido) % 2 === 0;
+}
+
+/**
+ * Dónde estaría cada colectivo ahora, según los horarios por parada: entre dos paradas con horario, se interpola
+ * por el recorrido. Solo aparecen los servicios cuyo horario cubre el momento actual (los demás todavía no
+ * salieron, ya terminaron o no se conoce su tramo).
+ */
+export function busesEnVivo({ lineas, horarios, tipo, ahora: ahora0, ids = null }) {
+  const out = [];
+  // de madrugada también cuentan los servicios que siguen del día anterior (sus horarios pasan de las 24:00)
+  for (const ahora of ahora0 < 300 ? [ahora0, ahora0 + 1440] : [ahora0]) for (const L of lineas) {
+    if (ids && !ids.includes(L.id)) continue;
+    const T = horarios?.[L.id]?.[tipo];
+    if (!T) continue;
+    for (const b of T.bloques || []) {
+      const S = L.sentidos[b.sentido], R = S?.ramales[b.ramal];
+      if (!R) continue;
+      for (const fila of b.filas) {
+        const an = [];
+        fila.forEach((t, k) => {
+          if (t == null) return;
+          const s = S.paradas[b.paradas[k] - 1], m = s?.m[b.ramal];
+          if (m != null) an.push({ t, m, nombre: s.nombre });
+        });
+        an.sort((x, y) => x.m - y.m);
+        if (an.length < 2 || an.some((a, i) => i && a.t < an[i - 1].t - 1)) continue;
+        if (ahora < an[0].t || ahora > an[an.length - 1].t) continue;
+        const i = Math.max(1, an.findIndex(a => a.t >= ahora)), a0 = an[i - 1], a1 = an[i];
+        const f = a1.t === a0.t ? 0 : Math.min(1, Math.max(0, (ahora - a0.t) / (a1.t - a0.t))), m = a0.m + (a1.m - a0.m) * f;
+        out.push({ linea: L, sentido: b.sentido, ramal: b.ramal, ...puntoEn(R.pts, m), m, anterior: a0.nombre, proxima: a1.nombre, tProxima: a1.t, hacia: haciaElCentro(L, b.sentido) });
+      }
+    }
+  }
+  return out;
+}
+
+// ---------- viajes con trasbordo (más de una subida) ----------
+const CELDA = 300;
+const cacheIndice = new WeakMap();
+
+/** Índice de todas las paradas de todos los recorridos, con una grilla para buscar las cercanas. */
+function indiceDeParadas(lineas) {
+  if (cacheIndice.has(lineas)) return cacheIndice.get(lineas);
+  const nodos = [], grilla = new Map(), k = Math.cos(-31.78 * RAD);
+  const xy = p => [p.lon * k * 111195, p.lat * 111195];
+  const clave = (x, y) => Math.floor(x / CELDA) + ',' + Math.floor(y / CELDA);
+  for (const L of lineas) for (const [sentido, S] of Object.entries(L.sentidos)) S.ramales.forEach((R, ri) => {
+    const stops = S.paradas.filter(s => s.m[ri] != null).map(s => ({ s, m: s.m[ri] })).sort((a, b) => a.m - b.m);
+    if (stops.length < 2) return;
+    nodos.push({ id: nodos.length, L, sentido, ri, S, stops });
+  });
+  for (const n of nodos) n.stops.forEach((st, i) => {
+    const [x, y] = xy(st.s), c = clave(x, y);
+    if (!grilla.has(c)) grilla.set(c, []);
+    grilla.get(c).push({ n: n.id, i });
+  });
+  const ix = {
+    nodos,
+    /** Paradas a menos de `radio` metros de un punto: [{ n (nodo), i (posición en el nodo), d (metros) }]. */
+    cerca(p, radio) {
+      const [x, y] = xy(p), out = [], r = Math.ceil(radio / CELDA);
+      const cx = Math.floor(x / CELDA), cy = Math.floor(y / CELDA);
+      for (let a = cx - r; a <= cx + r; a++) for (let b = cy - r; b <= cy + r; b++)
+        for (const e of grilla.get(a + ',' + b) || []) { const d = dist(p, nodos[e.n].stops[e.i].s); if (d <= radio) out.push({ ...e, d }); }
+      return out;
+    },
+  };
+  cacheIndice.set(lineas, ix);
+  return ix;
+}
+
+const VEL_BUS = 330;   // metros por minuto (~20 km/h con paradas)
+const ESPERA = 6;      // minutos de espera que se suponen cuando no hay horarios
+
+/**
+ * Combinaciones de colectivos para ir de un punto a otro con hasta `maxTramos` subidas, sin mirar horarios.
+ * Cada ruta: { tramos: [{ nodo, sube, baja }], caminatas: [m…], minutos (estimado), trasbordos }.
+ * Solo se cambia de una línea a otra (no se vuelve a la misma) y cada tramo tiene que acercarte al destino.
+ */
+export function rutasConTrasbordo({ lineas, origen, destino, cfg, maxTramos = 3, max = 10 }) {
+  const ix = indiceDeParadas(lineas), rT = cfg.radioTrasbordo ?? 300, GAP = 400;
+  const minimo = (a, b) => (a.d <= b.d ? a : b);
+  // por dónde me subo cerca del origen (una parada por recorrido: la más cercana)
+  const salidas = new Map();
+  for (const e of ix.cerca(origen, cfg.radioOrigen)) salidas.set(e.n, salidas.has(e.n) ? minimo(salidas.get(e.n), e) : e);
+  // en qué paradas de cada recorrido me puedo bajar para llegar al destino
+  const llegadas = new Map();
+  for (const e of ix.cerca(destino, cfg.radioDestino)) { if (!llegadas.has(e.n)) llegadas.set(e.n, []); llegadas.get(e.n).push(e); }
+  const bajada = (n, mMin) => {
+    const v = (llegadas.get(n) || []).filter(x => ix.nodos[n].stops[x.i].m >= mMin);
+    if (!v.length) return null;
+    const dm = Math.min(...v.map(x => x.d));
+    return v.filter(x => x.d <= dm + Math.max(60, dm * 0.1)).sort((a, b) => a.i - b.i)[0];
+  };
+  const acerca = (p, q) => dist(p, destino) < dist(q, destino) - 250;
+  const camino = [];
+  const guardar = (tramos, caminatas) => {
+    const km = tramos.reduce((s, t) => s + (ix.nodos[t.n].stops[t.baja].m - ix.nodos[t.n].stops[t.sube].m), 0);
+    const andar = caminatas.reduce((s, d) => s + minCaminata(d, cfg), 0);
+    const minutos = km / VEL_BUS + andar + tramos.length * ESPERA;
+    camino.push({ tramos: tramos.map(t => ({ ...t })), caminatas, minutos, trasbordos: tramos.length - 1, clave: tramos.map(t => { const n = ix.nodos[t.n]; return n.L.id + ':' + n.stops[t.sube].s.nombre + '>' + n.stops[t.baja].s.nombre; }).join('|') });
+  };
+
+  // 2 tramos
+  for (const st of salidas.values()) {
+    const n1 = ix.nodos[st.n], b1 = n1.stops[st.i];
+    for (let j = st.i + 1; j < n1.stops.length; j++) {
+      const a1 = n1.stops[j];
+      if (a1.m < b1.m + GAP || !acerca(a1.s, b1.s)) continue;
+      for (const e of ix.cerca(a1.s, rT)) {
+        const n2 = ix.nodos[e.n];
+        if (n2.L.id === n1.L.id) continue;
+        const b2 = n2.stops[e.i], baj = bajada(e.n, b2.m + GAP);
+        if (baj) guardar([{ n: st.n, sube: st.i, baja: j }, { n: e.n, sube: e.i, baja: baj.i }], [st.d, e.d, baj.d]);
+      }
+    }
+  }
+  // 3 tramos (solo si con 2 no alcanza)
+  if (maxTramos >= 3 && camino.length < 3) {
+    for (const st of salidas.values()) {
+      const n1 = ix.nodos[st.n], b1 = n1.stops[st.i];
+      for (let j = st.i + 1; j < n1.stops.length; j++) {
+        const a1 = n1.stops[j];
+        if (a1.m < b1.m + GAP || !acerca(a1.s, b1.s)) continue;
+        for (const e of ix.cerca(a1.s, rT)) {
+          const n2 = ix.nodos[e.n];
+          if (n2.L.id === n1.L.id) continue;
+          const b2 = n2.stops[e.i];
+          for (let q = e.i + 1; q < n2.stops.length; q++) {
+            const a2 = n2.stops[q];
+            if (a2.m < b2.m + GAP || !acerca(a2.s, b2.s)) continue;
+            for (const f of ix.cerca(a2.s, rT)) {
+              const n3 = ix.nodos[f.n];
+              if (n3.L.id === n2.L.id || n3.L.id === n1.L.id) continue;
+              const b3 = n3.stops[f.i], baj = bajada(f.n, b3.m + GAP);
+              if (baj) guardar([{ n: st.n, sube: st.i, baja: j }, { n: e.n, sube: e.i, baja: q }, { n: f.n, sube: f.i, baja: baj.i }], [st.d, e.d, f.d, baj.d]);
+            }
+          }
+        }
+      }
+    }
+  }
+  // una por combinación de líneas (la más rápida), y las mejores primero; con menos trasbordos a igual tiempo
+  const mejores = new Map();
+  for (const r of camino) { const p = mejores.get(r.clave); if (!p || r.minutos < p.minutos) mejores.set(r.clave, r); }
+  return [...mejores.values()].sort((a, b) => (a.minutos + a.trasbordos * 4) - (b.minutos + b.trasbordos * 4)).slice(0, max).map(r => ({
+    ...r,
+    tramos: r.tramos.map((t, i) => {
+      const n = ix.nodos[t.n], sube = n.stops[t.sube].s, baja = n.stops[t.baja].s;
+      const miniOrigen = minCaminata(r.caminatas[i], cfg), miniDestino = minCaminata(r.caminatas[i + 1], cfg);
+      // opción en el mismo formato que opcionesDeViaje (así sirven viajesDeBloques / viajesDeOpcion)
+      return {
+        id: `${n.L.id}-${n.sentido}-${sube.n}-${baja.n}`, linea: n.L, sentido: n.sentido, ramales: [n.ri], ri: n.ri, desc: n.S.ramales[n.ri]?.desc || n.S.desc,
+        sube, baja, mOrigen: Math.round(r.caminatas[i]), mDestino: Math.round(r.caminatas[i + 1]), minOrigen: i === 0 ? miniOrigen : 0, minDestino: miniDestino,
+        tramo: Math.round(n.stops[t.baja].m - n.stops[t.sube].m),
+      };
+    }),
+  }));
+}
+
+/** Todos los servicios de una opción (horarios de Paraná Online primero; las planillas completan lo que falte). */
+export function serviciosDeOpcion(op, { planillas = [], horarios = null, tipo, cfg }) {
+  const T = horarios?.[op.linea.id]?.[tipo];
+  const delSitio = T ? viajesDeBloques(op, T, cfg) : [];
+  let deLaPlanilla = [];
+  if (cfg.usarPlanillas !== false && coberturaDe(T) < 0.85)
+    for (const pl of planillas.filter(p => p.linea === op.linea.id && p.tipo === tipo)) deLaPlanilla.push(...viajesDeOpcion(op, pl, cfg).map(v => ({ ...v, fuente: 'planilla' })));
+  deLaPlanilla = deLaPlanilla.filter(v => !delSitio.some(s => Math.abs(s.tSube - v.tSube) <= 4));
+  return [...delSitio, ...deLaPlanilla].sort((a, b) => a.tSube - b.tSube || a.tLlega - b.tLlega);
+}
+
+/**
+ * Viajes con trasbordo con horarios: encadena un servicio de cada tramo (el siguiente sale después de que llegás).
+ *   { limite }  quiero llegar antes de esa hora → el que sale lo más tarde posible
+ *   { desde }   salgo a partir de esa hora      → el que llega lo antes posible
+ * Devuelve { rutas: [{ servicios[], tSalir, tLlega, trasbordos, espera }], sinHorario: [ruta…] }.
+ */
+export function planificarRutas({ lineas, planillas = [], horarios = null, origen, destino, tipo, limite = null, desde = null, cfg, max = 5, directos = [] }) {
+  const margen = cfg.margenTrasbordo ?? 3;
+  const cands = rutasConTrasbordo({ lineas, origen, destino, cfg });
+  const rutas = [], sinHorario = [];
+  for (const c of cands) {
+    const listas = c.tramos.map(op => serviciosDeOpcion(op, { planillas, horarios, tipo, cfg }));
+    if (listas.some(l => !l.length)) { sinHorario.push(c); continue; }
+    let mejor = null;
+    // para cada servicio posible del primer tramo, armo la cadena más temprana
+    for (const v1 of listas[0]) {
+      if (desde != null && v1.tSalir < desde) continue;
+      const cadena = [v1];
+      let ok = true;
+      for (let i = 1; i < listas.length && ok; i++) {
+        const lleg = cadena[i - 1].tLlega + margen;
+        const sig = listas[i].find(v => v.tSube >= lleg);
+        if (!sig) ok = false; else cadena.push(sig);
+      }
+      if (!ok) continue;
+      const fin = cadena[cadena.length - 1].tLlega;
+      if (limite != null && fin > limite) continue;
+      const espera = cadena.slice(1).reduce((s, v, i) => s + (v.tSube - cadena[i].tLlega), 0);
+      const r = { servicios: cadena, tSalir: v1.tSalir, tLlega: fin, trasbordos: c.trasbordos, espera, ruta: c };
+      if (!mejor || (limite != null ? r.tSalir > mejor.tSalir : r.tLlega < mejor.tLlega)) mejor = r;
+    }
+    if (mejor) rutas.push(mejor); else sinHorario.push(c);
+  }
+  rutas.sort((a, b) => (limite != null ? b.tSalir - a.tSalir || a.trasbordos - b.trasbordos : a.tLlega - b.tLlega || a.trasbordos - b.trasbordos));
+  // no sirve cambiar de colectivo si en directo salís igual o más tarde y llegás igual o antes
+  const vistas = new Set();
+  const utiles = rutas.filter(r => {
+    if (directos.some(d => d.tSalir >= r.tSalir && d.tLlega <= r.tLlega)) return false;
+    const k = r.servicios.map(v => v.op.linea.id).join('>') + '@' + r.tSalir + '-' + r.tLlega;   // mismas líneas y horarios con otra parada de trasbordo
+    if (vistas.has(k)) return false;
+    vistas.add(k);
+    return true;
+  });
+  return { rutas: utiles.slice(0, max), sinHorario, candidatas: cands.length, descartadas: rutas.length - utiles.length };
 }

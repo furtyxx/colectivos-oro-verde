@@ -1,5 +1,5 @@
 :root {
-  --fondo: #f3f5f2; --panel: #ffffff; --texto: #17201a; --suave: #5b675f; --linea: #d9dfd9;
+  --fondo: #f3f5f2; --calle: #cdd5cf; --panel: #ffffff; --texto: #17201a; --suave: #5b675f; --linea: #d9dfd9;
   --verde: #166534; --verde-claro: #dcfce7; --oro: #b45309; --oro-claro: #fef3c7;
   --rojo: #b91c1c; --rojo-claro: #fee2e2; --azul: #1d4ed8; --azul-claro: #dbeafe;
   --radio: 14px; --tabs: 62px;
@@ -7,7 +7,7 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --fondo: #0f1512; --panel: #1a221d; --texto: #e8efe9; --suave: #9aa89f; --linea: #2c3831;
+    --fondo: #0f1512; --calle: #2a362f; --panel: #1a221d; --texto: #e8efe9; --suave: #9aa89f; --linea: #2c3831;
     --verde: #4ade80; --verde-claro: #14351f; --oro: #fbbf24; --oro-claro: #3b2a0a;
     --rojo: #f87171; --rojo-claro: #3f1515; --azul: #93c5fd; --azul-claro: #172b4d;
   }
@@ -135,7 +135,12 @@ details > summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
 .chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; }
 .chips button { flex: none; border: 1px solid var(--linea); background: var(--panel); border-radius: 99px; min-height: 38px; padding: 4px 14px; cursor: pointer; font-weight: 600; }
 .chips button[aria-pressed="true"] { background: #166534; border-color: #166534; color: #fff; }
-.mapa { width: 100%; height: auto; display: block; border-radius: 10px; background: var(--fondo); border: 1px solid var(--linea); }
+.mapa { width: 100%; height: auto; display: block; border-radius: 10px; background: var(--fondo); border: 1px solid var(--linea); cursor: grab; user-select: none; -webkit-user-select: none; }
+.mapa-caja { position: relative; }
+.mapa-botones { position: absolute; top: 8px; right: 8px; display: grid; gap: 6px; }
+.mapa-botones button { width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--linea); background: var(--panel); color: var(--texto); font-size: 1.1rem; font-weight: 700; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,.25); }
+.mapa-leyenda { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: .8rem; color: var(--suave); }
+.mapa-leyenda i { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; border: 1.5px solid #fff; box-shadow: 0 0 0 1px var(--linea); }
 .lista { list-style: none; margin: 0; padding: 0; }
 .lista li { border-top: 1px solid var(--linea); }
 .lista li:first-child { border-top: 0; }
@@ -162,3 +167,10 @@ dialog { border: 0; border-radius: 16px; padding: 0; width: min(560px, calc(100v
 dialog::backdrop { background: rgba(0,0,0,.5); }
 dialog .cuerpo { padding: 16px; display: grid; gap: 12px; }
 dialog h2 { font-size: 1.05rem; }
+
+/* horarios por servicio e historial */
+.chips-hora { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips-hora .btn { min-height: 34px; padding: 4px 10px; font-variant-numeric: tabular-nums; }
+.tabla-hist { width: 100%; border-collapse: collapse; font-size: .85rem; font-variant-numeric: tabular-nums; }
+.tabla-hist th, .tabla-hist td { padding: 5px 6px; text-align: left; border-bottom: 1px solid var(--linea); }
+.tabla-hist th { color: var(--suave); font-weight: 600; font-size: .75rem; }

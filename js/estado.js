@@ -1,13 +1,14 @@
 // Estado guardado en el dispositivo (localStorage) y datos de recorridos.
 import { CFG_DEFECTO, LUGARES_DEFECTO, PRECARGADAS } from './datos.js';
-import { resolverColumnas } from './motor.js';
+import { resolverColumnas, tipoDeDia, busesEnVivo } from './motor.js';
+import { hoyISO } from './ui.js';
 
 const CLAVE = 'ov.estado.v1';
 
 /** Lo que se guarda: ajustes, lugares, planillas, viaje en curso y último plan. */
 export const E = { cfg: {}, lugares: [], planillas: [], borradas: [], viaje: null, plan: {} };
 /** Datos de solo lectura generados por tools/actualizar.mjs */
-export const D = { lineas: [], generado: null, cambios: null, calles: null, horarios: null };
+export const D = { lineas: [], generado: null, cambios: null, calles: null, horarios: null, resumen: undefined };
 
 export function cargarEstado() {
   let g = {};
@@ -39,8 +40,9 @@ export async function cargarDatos() {
   try { D.horarios = await (await fetch('data/horarios.json')).json(); } catch { D.horarios = null; }
 }
 
+export const calleListas = new EventTarget(); // avisa cuando terminaron de cargar las calles (para repintar los mapas)
 export async function cargarCalles() {
-  if (!D.calles) D.calles = (await (await fetch('data/calles.json')).json()).calles;
+  if (!D.calles) { D.calles = (await (await fetch('data/calles.json')).json()).calles; calleListas.dispatchEvent(new Event('listas')); }
   return D.calles;
 }
 
@@ -68,3 +70,37 @@ export function recordarLugar(p) {
 }
 
 export const cuandoLlega = 'https://cuandollega.smartmovepro.net/parana';
+
+/** Qué horario corre en una fecha: lo que mostraba Paraná Online ese día o, si no, el calendario. */
+export function tipoAuto(fecha) {
+  const web = D.cambios?.tipoHoy;
+  if (web?.fecha === fecha && web.tipo) {
+    const t = /dom/i.test(web.tipo) ? 'domingo' : /s[aá]b/i.test(web.tipo) ? 'sabado' : /h[aá]b|sem|lun/i.test(web.tipo) ? 'habil' : null;
+    if (t) return { tipo: t, motivo: 'es lo que mostraba Paraná Online hoy' };
+  }
+  return tipoDeDia(fecha);
+}
+
+// ---------- colectivos estimados en el mapa ----------
+export const COLOR_BUS = { hacia: '#0ea5e9', desde: '#a855f7' };   // hacia el Centro / desde el Centro
+export const LEYENDA_BUS = [['hacia el Centro', COLOR_BUS.hacia], ['desde el Centro', COLOR_BUS.desde]];
+
+/** Colectivos que estarían circulando ahora (estimados con los horarios por parada). ids = solo esas líneas. */
+export function busesAhora(ids = null) {
+  if (!D.horarios) return [];
+  const d = new Date(), ahora = d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
+  return busesEnVivo({ lineas: D.lineas, horarios: D.horarios.lineas, tipo: tipoAuto(hoyISO()).tipo, ahora, ids });
+}
+/** Para dibujarlos en el mapa: un círculo con el número de línea, del color del sentido. */
+export const busesParaMapa = lista => lista.map(b => ({ lat: b.lat, lon: b.lon, color: b.hacia ? COLOR_BUS.hacia : COLOR_BUS.desde, texto: b.linea.id.replace('-', '') }));
+
+/** Vuelve a bajar los horarios (los junta una tarea de GitHub cada hora). */
+export async function refrescarHorarios() {
+  try { const r = await fetch('data/horarios.json', { cache: 'no-cache' }); if (r.ok) D.horarios = await r.json(); } catch { /* sin conexión: quedan los que había */ }
+  return D.horarios;
+}
+/** Resumen por día de cada línea (cuántos servicios, primer y último horario, intervalo medio) para ver tendencias. */
+export async function cargarResumen() {
+  if (D.resumen === undefined) { try { D.resumen = await (await fetch('data/historial/resumen.json', { cache: 'no-cache' })).json(); } catch { D.resumen = null; } }
+  return D.resumen;
+}

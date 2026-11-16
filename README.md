@@ -41,11 +41,18 @@ Esta app no tiene relación con ERSA ni con Paraná Online. Los horarios depende
 
 ## Horarios: de dónde salen
 
-- **Paraná Online (principal).** Cada media hora una tarea de GitHub (`.github/workflows/horarios.yml`, `tools/horarios.mjs`) lee en cada línea los colectivos que anuncia cada parada y los suma a `data/horarios/crudo/`. Con eso arma, en `data/horarios.json`, los servicios completos de cada línea y tipo de día (hábil, sábado, domingo).
-  - Líneas **urbanas (A a S)**: la página trae el día completo, así que están completas desde la primera lectura.
-  - Líneas **interurbanas** (Oro Verde, San Benito, Colonia Avellaneda…): el sitio solo muestra lo que pasa en las próximas ~2 horas, por eso el horario se va completando con las lecturas; un tipo de día queda completo cuando se leyó durante todo un día de ese tipo.
+- **Paraná Online (principal).** Para cada parada, su página muestra solo los colectivos desde ahora hasta unas 2 horas adelante (medido: siete lecturas con un minuto de diferencia; los horarios no se mueven, son los programados, y solo van entrando horarios nuevos al final). Un trabajo de GitHub (`.github/workflows/horarios.yml` → `tools/horarios.mjs --bucle`) corre casi 6 horas seguidas leyendo las líneas interurbanas cada 5 minutos y las urbanas cada hora, y se vuelve a lanzar solo al terminar. Suma lo que ve a `data/horarios/crudo/`, arma los servicios en `data/horarios.json` y cada hora sube todo a GitHub.
+  - Líneas **urbanas (A a S)**: la página trae el día completo, así que quedan completas desde la primera lectura.
+  - Líneas **interurbanas**: el horario de un tipo de día (hábil, sábado, domingo) queda completo cuando se lee durante un día entero de ese tipo.
+- **Historial.** Cada día queda `data/historial/AAAA-MM-DD.json` (los servicios con la hora de paso por cada parada) y `data/historial/resumen.json` (por día y línea: cantidad de servicios, primer y último horario, intervalo medio) para ver tendencias. Se ve en la pestaña Líneas.
 - **Planillas (de apoyo).** Las imágenes de las planillas oficiales quedan guardadas para consulta en la pestaña Planillas. Se usan para estimar un viaje solo donde Paraná Online todavía no tiene el horario (se puede apagar en Ajustes) y el viaje queda marcado como estimado.
-- `tools/actualizar.mjs` (cada día): recorridos y paradas de las 9 líneas interurbanas y las 13 urbanas. `--lineas=a,f,6` lee solo algunas.
+- `tools/actualizar.mjs` (una vez por día, desde el mismo trabajo): recorridos y paradas de las 9 líneas interurbanas y las 13 urbanas. `--lineas=a,f,6` lee solo algunas.
+
+## Viajes con trasbordo y colectivos en el mapa
+
+- Si no hay línea directa (o conviene combinar), `rutasConTrasbordo` busca hasta 3 colectivos de líneas distintas con paradas de cambio a ≤ 300 m, y `planificarRutas` encadena los horarios (el siguiente sale después de que llegás). No se ofrece un trasbordo si en directo salís después y llegás antes.
+- La pestaña Líneas → "En vivo" dibuja dónde estaría cada colectivo ahora (interpolando entre paradas con horario), con un color para los que van hacia el Centro y otro para los que vienen. Son estimaciones con el horario programado, no el GPS real de los coches.
+- Los mapas dibujan las calles de OpenStreetMap (`data/calles.json`), se mueven arrastrando y se acercan con ＋/－ o pellizcando.
 
 ## En viaje
 

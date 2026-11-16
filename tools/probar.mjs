@@ -245,5 +245,86 @@ console.log('Dónde voy en el recorrido (GPS)');
   ok(lejos.fuera > 20000, 'un punto a 28 km del recorrido figura como "fuera"');
 }
 
+console.log('Colectivos estimados en el mapa y viajes con trasbordo');
+{
+  const S6 = L('6').sentidos.ida, pts6 = S6.ramales[0].pts;
+  const largo = S6.ramales[0].largo, mitad = M.puntoEn(pts6, largo / 2), ini = M.puntoEn(pts6, 0), fin = M.puntoEn(pts6, largo + 500);
+  ok(M.proyectar(pts6, mitad).fuera < 5 && Math.abs(M.proyectar(pts6, mitad).m - largo / 2) < 30, 'puntoEn: a mitad del recorrido cae sobre el recorrido, a la mitad');
+  ok(M.dist(ini, { lat: pts6[0][0], lon: pts6[0][1] }) < 1 && M.dist(fin, { lat: pts6.at(-1)[0], lon: pts6.at(-1)[1] }) < 1, 'puntoEn: antes del comienzo y después del final queda en los extremos');
+  ok(M.haciaElCentro(L('6'), 'ida') && !M.haciaElCentro(L('6'), 'vuelta') && M.haciaElCentro(L('A'), Object.keys(L('A').sentidos)[0]) !== M.haciaElCentro(L('A'), Object.keys(L('A').sentidos)[1]), 'sentidos: hacia y desde el Centro tienen colores distintos');
+
+  // un colectivo de la línea 6 que sale a las 16:00 y pasa por 12 paradas con horario
+  const ps = S6.paradas.filter((p, i) => p.m[0] != null && i % 4 === 0);
+  const bloque = { sentido: 'ida', ramal: 0, cartel: '', paradas: ps.map(p => p.n), filas: [ps.map(p => Math.round(M.aMin('16:00') + p.m[0] / 330))] };
+  const hor = { 6: { domingo: { franjas: '1'.repeat(48), bloques: [bloque] } } };
+  const medio = M.aMin('16:00') + Math.round(ps[Math.floor(ps.length / 2)].m[0] / 330);
+  const b1 = M.busesEnVivo({ lineas, horarios: hor, tipo: 'domingo', ahora: medio });
+  ok(b1.length === 1 && b1[0].hacia && M.proyectar(pts6, b1[0]).fuera < 30 && Math.abs(M.proyectar(pts6, b1[0]).m - ps[Math.floor(ps.length / 2)].m[0]) < 400, `a las ${h(medio)} el colectivo está a mitad de recorrido (${b1[0] ? b1[0].anterior : '—'} → ${b1[0] ? b1[0].proxima : '—'})`);
+  ok(M.busesEnVivo({ lineas, horarios: hor, tipo: 'domingo', ahora: M.aMin('15:30') }).length === 0 && M.busesEnVivo({ lineas, horarios: hor, tipo: 'domingo', ahora: M.aMin('23:50') }).length === 0, 'antes de salir y después de terminar no aparece');
+  ok(M.busesEnVivo({ lineas, horarios: hor, tipo: 'habil', ahora: medio }).length === 0 && M.busesEnVivo({ lineas, horarios: hor, tipo: 'domingo', ahora: medio, ids: ['15'] }).length === 0, 'respeta el tipo de día y el filtro de líneas');
+  const pasaMedianoche = { 6: { domingo: { franjas: '1'.repeat(48), bloques: [{ ...bloque, filas: [bloque.filas[0].map((t, i) => M.aMin('23:40') + Math.round(ps[i].m[0] / 330))] }] } } };
+  ok(M.busesEnVivo({ lineas, horarios: pasaMedianoche, tipo: 'domingo', ahora: 20 }).length === 1, 'un servicio que cruza la medianoche sigue apareciendo a las 00:20');
+
+  // trasbordo: busco dos puntos sin línea directa que se unan con dos colectivos
+  const urb = lineas.filter(l => l.tipo === 'urbana');
+  const puntos = urb.flatMap(l => Object.values(l.sentidos).flatMap(s => s.paradas.filter((_, i) => i % 9 === 0).map(p => ({ lat: p.lat, lon: p.lon, linea: l.id }))));
+  let par = null;
+  for (let i = 0; i < puntos.length && !par; i += 3) for (let j = i + 7; j < puntos.length && !par; j += 11) {
+    const a = puntos[i], b = puntos[j];
+    if (a.linea === b.linea || M.dist(a, b) < 3500 || M.opcionesDeViaje(lineas, a, b, cfg).length) continue;
+    const r = M.rutasConTrasbordo({ lineas, origen: a, destino: b, cfg });
+    if (r.length) par = { a, b, r };
+  }
+  ok(!!par, 'hay pares de lugares sin colectivo directo que se resuelven con trasbordo');
+  if (par) {
+    const r0 = par.r[0];
+    console.log(`    ejemplo: ${r0.tramos.map(o => 'línea ' + o.linea.id + ' (' + o.sube.nombre + ' → ' + o.baja.nombre + ')').join('  +  ')}; ~${Math.round(r0.minutos)} min`);
+    ok(par.r.every(x => x.tramos.length >= 2 && x.tramos.every((o, i) => o.baja.m[o.ri] > o.sube.m[o.ri] + 300 && (!i || (x.tramos[i - 1].linea.id !== o.linea.id && M.dist(x.tramos[i - 1].baja, o.sube) <= 300)))), 'cada tramo avanza en su recorrido, cambia de línea y la parada de trasbordo está a ≤ 300 m');
+    ok(M.dist(par.a, r0.tramos[0].sube) <= cfg.radioOrigen && M.dist(par.b, r0.tramos.at(-1).baja) <= cfg.radioDestino, 'sube cerca del origen y baja cerca del destino');
+    // con horarios completos inventados para esas dos líneas: el segundo colectivo sale después de que llegás
+    const bloquesDe = (op, salidas) => { const S = op.linea.sentidos[op.sentido], ps = S.paradas.filter(p => p.m[op.ri] != null && (p.n % 2 === 0 || p.n === op.sube.n || p.n === op.baja.n)); return salidas.map(t0 => ({ sentido: op.sentido, ramal: op.ri, cartel: '', paradas: ps.map(p => p.n), filas: [ps.map(p => Math.round(t0 + p.m[op.ri] / 330))] })); };
+    const horarios2 = {};
+    for (const op of r0.tramos) { const salidas = [...Array(24)].map((_, k) => M.aMin('5:00') + k * 40); (horarios2[op.linea.id] ||= { domingo: { franjas: '1'.repeat(48), bloques: [] } }).domingo.bloques.push(...bloquesDe(op, salidas)); }
+    const res = M.planificarRutas({ lineas, planillas: [], horarios: horarios2, origen: par.a, destino: par.b, tipo: 'domingo', desde: M.aMin('12:00'), cfg: { ...cfg, usarPlanillas: false } });
+    const x = res.rutas[0];
+    ok(x && x.servicios.length >= 2 && x.servicios.every((v, i) => !i || v.tSube >= x.servicios[i - 1].tLlega + 3) && x.tSalir >= M.aMin('12:00') && x.tLlega > x.tSalir, `encadena los horarios: sale ${x && h(x.tSalir)}, llega ${x && h(x.tLlega)}`);
+    const dominado = M.planificarRutas({ lineas, planillas: [], horarios: horarios2, origen: par.a, destino: par.b, tipo: 'domingo', desde: M.aMin('12:00'), cfg: { ...cfg, usarPlanillas: false }, directos: [{ tSalir: x.tSalir + 5, tLlega: x.tLlega - 5 }] });
+    ok(!dominado.rutas.some(r => r.tSalir === x.tSalir && r.tLlega === x.tLlega), 'si en directo salís después y llegás antes, no ofrece el trasbordo');
+    const tarde = M.planificarRutas({ lineas, planillas: [], horarios: horarios2, origen: par.a, destino: par.b, tipo: 'domingo', limite: x.tLlega, cfg: { ...cfg, usarPlanillas: false } });
+    ok(tarde.rutas.length && tarde.rutas.every(r => r.tLlega <= x.tLlega) && tarde.rutas[0].tSalir >= x.tSalir, 'en modo "llegar a una hora" toma el que sale más tarde y llega a tiempo');
+  }
+}
+
+console.log('Recolector de horarios de Paraná Online');
+{
+  const H = await import('./horarios.mjs');
+  // página con el formato de las interurbanas (cartel por destino) y de las urbanas (servicio en el id)
+  const inter = "<div class='horarios-titulo horarios-sabado'>x</div><div class='parada-card'> <button class='parada-btn' data-interurbano='1' data-target='horarios-ci-6-647' > 25 DE MAYO </button> <div id='x' class='parada-horarios'> <div class='cartel-bloque'><div class='cartel-titulo'>[A ORO VERDE]</div><span class='hora-item'>17:31</span> <span class='hora-item'>18:31</span> </div> <div class='cartel-bloque'><span class='cartel-titulo'>[A C.GOB]</span><span class='hora-item'>09:05</span></div> </div> </div>";
+  const urbana = "<div class='horarios-titulo horarios-habil'>x</div><div class='parada-card'> <button class='parada-btn' data-target='horarios-3-508'> AV. ZANNI - CALLE 926 </button> <div id='y' class='parada-horarios'> <span class='hora-item'>07:00</span> <span class='hora-item'>00:10</span> </div> </div>";
+  const a = H.leerHorarios(inter), u = H.leerHorarios(urbana, true);
+  ok(a.tipo === 'sabado' && a.paradas[0].pid === '647' && a.paradas[0].carteles.length === 2 && a.paradas[0].carteles[0].horas.join() === '1051,1111', 'lee una parada interurbana: tipo de día, id y horarios por cartel');
+  ok(u.tipo === 'habil' && u.paradas[0].pid === '508' && u.paradas[0].carteles[0].cartel === 's3' && u.completo, 'lee una parada urbana: el servicio queda como cartel');
+  // acumulado: ventana de unas 2 horas y reemplazo en las urbanas
+  const crudo = { linea: '6', tipos: {} };
+  const r1 = H.acumular(crudo, a, '2026-11-15', 17 * 60);
+  const T = crudo.tipos.sabado;
+  ok(r1.nuevos === 2 && T.franjas.slice(34, 37) === '111' && T.franjas[33] === '0' && T.franjas[37] === '0', 'una lectura a las 17:00 guarda los 2 horarios de la ventana (el de las 9:05 queda afuera) y cubre las franjas de 17:00 a 18:30');
+  const r2 = H.acumular(crudo, a, '2026-11-15', 17 * 60 + 5);
+  ok(r2.nuevos === 0, 'la misma lectura de nuevo no suma nada');
+  const cu = { linea: 'A', tipos: {} };
+  H.acumular(cu, u, '2026-11-15', 600);
+  ok(cu.tipos.habil.franjas === '1'.repeat(48) && Object.keys(cu.tipos.habil.paradas['508'].c.s3).join() === '420,1450', 'urbana: el día queda completo y el 00:10 cuenta como 24:10');
+  const u2 = H.leerHorarios(urbana.replace("<span class='hora-item'>07:00</span>", "<span class='hora-item'>07:05</span>"), true);
+  H.acumular(cu, u2, '2026-11-16', 700);
+  ok(Object.keys(cu.tipos.habil.paradas['508'].c.s3).join() === '425,1450', 'urbana: si cambió el horario, el nuevo reemplaza al viejo');
+  // armar servicios: dos colectivos que pasan por 3 paradas de la línea 6
+  const S = L('6').sentidos.ida, ps = S.paradas.filter(p => p.web).filter((p, i) => i % 6 === 0).slice(0, 3);
+  const c6 = { linea: '6', tipos: { domingo: { fechas: ['2026-11-15'], franjas: '1'.repeat(48), paradas: {} } } };
+  ps.forEach((p, k) => { c6.tipos.domingo.paradas['p' + p.n] = { n: p.web, c: { '[IDA]': { [600 + k * 10]: '2026-11-15', [660 + k * 10]: '2026-11-15' } } }; });
+  const der = H.derivar(c6, { ...L('6'), sentidos: { ida: { ...S, paradas: S.paradas.map(p => ({ ...p })) } } });
+  const b = der.domingo?.bloques.find(x => x.sentido === 'ida');
+  ok(b && b.filas.length === 2 && b.filas.every(f => f.filter(x => x != null).length === 3) && b.filas[0][0] === 600 && b.filas[1][2] === 680, 'dos colectivos separados por una hora se arman como dos servicios de 3 paradas');
+}
+
 console.log(fallas ? `\n${fallas} PRUEBA(S) FALLARON` : '\nTodo OK');
 process.exit(fallas ? 1 : 0);
