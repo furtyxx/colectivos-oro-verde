@@ -1,12 +1,31 @@
 {
- "revisado": "2026-11-15T19:19:04.494Z",
+ "revisado": "2026-11-16T00:21:04.980Z",
  "tipoHoy": {
   "fecha": "2026-11-15",
   "tipo": "domingo",
   "porLinea": {
+   "4": "domingo",
+   "6": "domingo",
+   "12": "domingo",
+   "15": "domingo",
+   "20": "domingo",
+   "22": "domingo",
+   "24": "domingo",
+   "17-AM": "domingo",
+   "22E-AN": "domingo",
    "A": "domingo",
+   "B": "domingo",
+   "C": "domingo",
+   "D": "domingo",
+   "E": "domingo",
    "F": "domingo",
-   "L": "domingo"
+   "G": "domingo",
+   "H": "domingo",
+   "L": "domingo",
+   "M": "domingo",
+   "P": "domingo",
+   "R": "domingo",
+   "S": "domingo"
   }
  },
  "errores": [],
