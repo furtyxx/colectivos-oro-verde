@@ -6,7 +6,7 @@ import { hoyISO } from './ui.js';
 const CLAVE = 'ov.estado.v1';
 
 /** Lo que se guarda: ajustes, lugares, planillas, viaje en curso y último plan. */
-export const E = { cfg: {}, lugares: [], planillas: [], borradas: [], viaje: null, plan: {} };
+export const E = { cfg: {}, lugares: [], planillas: [], borradas: [], viaje: null, plan: {}, arribos: { lugar: 'casa', radio: 300 } };
 /** Datos de solo lectura generados por tools/actualizar.mjs */
 export const D = { lineas: [], generado: null, cambios: null, calles: null, horarios: null, resumen: undefined };
 
@@ -23,6 +23,7 @@ export function cargarEstado() {
     else if (!E.planillas[i].editada && (E.planillas[i].ver || 0) < p.ver) E.planillas[i] = structuredClone(p);
   }
   E.viaje = g.viaje || null;
+  E.arribos = { lugar: 'casa', radio: 300, ...(g.arribos || {}) };
   E.plan = { origen: 'casa', destino: 'terminal', modo: 'llegar', tipo: 'auto', hora: '', fecha: '', ...(g.plan || {}) };
 }
 

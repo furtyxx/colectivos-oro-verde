@@ -307,6 +307,24 @@ console.log('Solo colectivos que todavía no pasaron (hora actual)');
   ok(ayer.recomendado && h(ayer.recomendado.salida.t) === '13:42', 'para otro día (sin hora actual) se ven todos los servicios');
 }
 
+console.log('Próximos arribos en una parada');
+{
+  const S6 = L('6').sentidos.ida, ps = S6.paradas.filter((p, i) => p.m[0] != null && i % 3 === 0);
+  const bloque = { sentido: 'ida', ramal: 0, cartel: '', paradas: ps.map(p => p.n), filas: ['16:00', '17:00', '18:00'].map(t0 => ps.map(p => Math.round(M.aMin(t0) + p.m[0] / 330))) };
+  const hor = { 6: { domingo: { franjas: '1'.repeat(48), bloques: [bloque] } } };
+  const parada = ps[Math.floor(ps.length / 2)], pasa = t0 => Math.round(M.aMin(t0) + parada.m[0] / 330);
+  const base = { lineas, planillas: [], horarios: hor, tipo: 'domingo', punto: { lat: parada.lat, lon: parada.lon }, radio: 150, cfg: { ...cfg, usarPlanillas: false } };
+  const x = M.arribosCerca({ ...base, ahora: pasa('16:00') + 5 }).find(r => r.linea.id === '6' && r.sentido === 'ida');
+  console.log('    próximos en esa parada: ' + (x ? x.arribos.map(a => h(a.t) + ' (en ' + a.falta + ' min)').join(', ') : 'ninguno'));
+  ok(x && x.arribos.length === 2 && x.arribos[0].t === pasa('17:00') && x.arribos[1].t === pasa('18:00') && x.arribos.every(a => a.fuente === 'sitio' && a.falta > 0), 'a las 16:xx + 5 min ya no figura el de las 16:00: aparecen el de las 17:00 y el de las 18:00, con cuánto falta');
+  ok(x.d < 40 && x.parada.nombre === parada.nombre, 'toma la parada de ese recorrido más cercana al lugar');
+  ok(!M.arribosCerca({ ...base, ahora: pasa('18:00') + 1 }).some(r => r.linea.id === '6' && r.arribos.length), 'después del último no queda ninguno');
+  const lejos = M.arribosCerca({ ...base, punto: { lat: parada.lat - 0.1, lon: parada.lon - 0.1 } });
+  ok(!lejos.some(r => r.linea.id === '6'), 'si el lugar está lejos de las paradas, no aparece la línea');
+  const corto = M.arribosCerca({ ...base, ahora: pasa('16:00') - 200, horas: 1 }).find(r => r.linea.id === '6');
+  ok(!corto || corto.arribos.every(a => a.falta <= 60), 'solo muestra los de las próximas horas pedidas');
+}
+
 console.log('Recolector de horarios de Paraná Online');
 {
   const H = await import('./horarios.mjs');

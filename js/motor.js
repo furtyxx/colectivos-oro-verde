@@ -636,3 +636,39 @@ export function planificarRutas({ lineas, planillas = [], horarios = null, orige
   });
   return { rutas: utiles.slice(0, max), sinHorario, candidatas: cands.length, descartadas: rutas.length - utiles.length };
 }
+
+// ---------- próximos arribos en una parada ----------
+/**
+ * Colectivos que van a pasar por las paradas cercanas a un punto, con la hora y cuánto falta.
+ * Sale de los horarios por parada de Paraná Online (los programados) y, si todavía no hay, de las planillas
+ * (marcado como estimado). Solo cuenta lo que todavía no pasó (hora `ahora`, en minutos del día).
+ * Devuelve [{ linea, sentido, ri, parada, d (metros), arribos: [{ t, falta, fuente, exacto }] }] ordenado por el próximo.
+ */
+export function arribosCerca({ lineas, planillas = [], horarios = null, tipo, punto, radio = 300, ahora, cfg, porLinea = 4, horas = 3 }) {
+  const ix = indiceDeParadas(lineas), mejores = new Map();
+  for (const e of ix.cerca(punto, radio)) {
+    const k = e.n, ant = mejores.get(k);
+    if (!ant || e.d < ant.d) mejores.set(k, e);
+  }
+  const out = [];
+  for (const e of mejores.values()) {
+    const n = ix.nodos[e.n], st = n.stops[e.i];
+    if (e.i >= n.stops.length - 1) continue;                       // la última parada: el colectivo ya terminó el recorrido
+    const sig = n.stops[e.i + 1].s;
+    const op = {
+      id: `${n.L.id}-${n.sentido}-${st.s.n}`, linea: n.L, sentido: n.sentido, ramales: [n.ri], ri: n.ri, desc: n.S.ramales[n.ri]?.desc || n.S.desc,
+      sube: st.s, baja: sig, mOrigen: Math.round(e.d), mDestino: 0, minOrigen: minCaminata(e.d, cfg), minDestino: 0, tramo: Math.round(n.stops[e.i + 1].m - st.m),
+    };
+    const vs = serviciosDeOpcion(op, { planillas, horarios, tipo, cfg });
+    const arribos = vs.filter(v => v.tSube >= ahora && v.tSube <= ahora + horas * 60)
+      .slice(0, porLinea).map(v => ({ t: v.tSube, falta: Math.round(v.tSube - ahora), fuente: v.fuente, exacto: v.subeExacto }));
+    out.push({ linea: n.L, sentido: n.sentido, ri: n.ri, parada: st.s, d: Math.round(e.d), desc: op.desc, arribos, hay: vs.length > 0 });
+  }
+  // un mismo recorrido con dos ramales no se repite: me quedo con el que tiene arribos más cercanos
+  const unicos = new Map();
+  for (const x of out) {
+    const k = x.linea.id + '|' + x.sentido, p = unicos.get(k);
+    if (!p || (x.arribos[0]?.t ?? 1e9) < (p.arribos[0]?.t ?? 1e9)) unicos.set(k, x);
+  }
+  return [...unicos.values()].sort((a, b) => (a.arribos[0]?.t ?? 1e9) - (b.arribos[0]?.t ?? 1e9) || a.d - b.d);
+}

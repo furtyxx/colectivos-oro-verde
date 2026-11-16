@@ -62,3 +62,7 @@ Esta app no tiene relación con ERSA ni con Paraná Online. Los horarios depende
 ## Buscar lugares
 
 Esquinas y paradas (sin conexión), OpenStreetMap y, con una clave de Google (Places API New) cargada en Ajustes, Google Maps. Desde Google Maps también se puede usar Compartir → Cole OV (`share_target` del manifest).
+
+## Arribos (estilo "Cuándo llega", con datos de Paraná Online)
+
+La pestaña Arribos muestra, para un lugar (o "cerca mío"), qué colectivos van a pasar por las paradas cercanas y cuánto falta, usando los horarios por parada de Paraná Online. "Cuándo llega" (cuandollega.smartmovepro.net) pide un token anti-falsificación y tiene límite de consultas del lado del servidor (responde 429: "se excedió el límite de consultas"), y el navegador no deja que esta app lo consulte directo; por eso la app no depende de él y deja el enlace como consulta aparte.

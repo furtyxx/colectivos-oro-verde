@@ -2,11 +2,11 @@
 // Estrategia: SIEMPRE se pide primero a la red (revalidando, sin usar copias viejas del navegador) y se guarda
 // la respuesta; la copia guardada solo se usa si no hay conexión o la red tarda más de 6 s en contestar.
 // Así los archivos de la app nunca quedan mezclados entre versiones.
-const CACHE = 'colectivos-ov-v9';
+const CACHE = 'colectivos-ov-v10';
 const BASE = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/ui.js', 'js/estado.js', 'js/datos.js', 'js/motor.js', 'js/buscador.js', 'js/lector.js', 'js/ocr.js', 'js/tabla.js',
-  'js/vista-planear.js', 'js/vista-vivo.js', 'js/vista-lineas.js', 'js/vista-planillas.js', 'js/vista-ajustes.js',
+  'js/vista-planear.js', 'js/vista-vivo.js', 'js/vista-arribos.js', 'js/vista-lineas.js', 'js/vista-planillas.js', 'js/vista-ajustes.js',
   'data/lineas.json', 'data/cambios.json', 'data/horarios.json', 'data/calles.json',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png',
 ];

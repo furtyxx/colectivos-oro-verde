@@ -6,10 +6,11 @@ import { dialogo, toast } from './ui.js';
 import { vistaPlanear } from './vista-planear.js';
 import { vistaVivo, retomarViaje } from './vista-vivo.js';
 import { vistaLineas } from './vista-lineas.js';
+import { vistaArribos } from './vista-arribos.js';
 import { vistaPlanillas } from './vista-planillas.js';
 import { vistaAjustes } from './vista-ajustes.js';
 
-const VISTAS = { planear: vistaPlanear, vivo: vistaVivo, lineas: vistaLineas, planillas: vistaPlanillas, ajustes: vistaAjustes };
+const VISTAS = { planear: vistaPlanear, vivo: vistaVivo, arribos: vistaArribos, lineas: vistaLineas, planillas: vistaPlanillas, ajustes: vistaAjustes };
 
 function rutear() {
   const tab = VISTAS[location.hash.slice(1)] ? location.hash.slice(1) : 'planear';
