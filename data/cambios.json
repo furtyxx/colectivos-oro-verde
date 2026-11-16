@@ -1,35 +1,85 @@
 {
- "revisado": "2026-11-16T00:24:23.243Z",
+ "revisado": "2026-11-16T07:37:15.797Z",
  "tipoHoy": {
-  "fecha": "2026-11-15",
-  "tipo": "domingo",
+  "fecha": "2026-11-16",
+  "tipo": "habiles",
   "porLinea": {
-   "4": "domingo",
-   "6": "domingo",
-   "12": "domingo",
-   "15": "domingo",
-   "20": "domingo",
-   "22": "domingo",
-   "24": "domingo",
-   "17-AM": "domingo",
-   "22E-AN": "domingo",
-   "A": "domingo",
-   "B": "domingo",
-   "C": "domingo",
-   "D": "domingo",
-   "E": "domingo",
-   "F": "domingo",
-   "G": "domingo",
-   "H": "domingo",
-   "L": "domingo",
-   "M": "domingo",
-   "P": "domingo",
-   "R": "domingo",
-   "S": "domingo"
+   "4": "habiles",
+   "6": "habiles",
+   "12": "habiles",
+   "15": "habiles",
+   "20": "habiles",
+   "22": "habiles",
+   "24": "habiles",
+   "17-AM": "habiles",
+   "22E-AN": "habiles",
+   "A": "habiles",
+   "B": "habiles",
+   "C": "habiles",
+   "D": "habiles",
+   "E": "habiles",
+   "F": "habiles",
+   "G": "habiles",
+   "H": "habiles",
+   "L": "habiles",
+   "M": "habiles",
+   "P": "habiles",
+   "R": "habiles",
+   "S": "habiles"
   }
  },
  "errores": [],
  "historial": [
+  {
+   "fecha": "2026-11-16",
+   "linea": "S",
+   "detalle": [
+    "34: pasó de 16 a 17 paradas",
+    "34: 1 parada(s) nuevas o corridas de lugar"
+   ]
+  },
+  {
+   "fecha": "2026-11-16",
+   "linea": "M",
+   "detalle": [
+    "27: pasó de 4 a 18 paradas",
+    "27: 14 parada(s) nuevas o corridas de lugar"
+   ]
+  },
+  {
+   "fecha": "2026-11-16",
+   "linea": "L",
+   "detalle": [
+    "Sentido 24: nuevo",
+    "Sentido 26: nuevo"
+   ]
+  },
+  {
+   "fecha": "2026-11-16",
+   "linea": "F",
+   "detalle": [
+    "Sentido 33: nuevo"
+   ]
+  },
+  {
+   "fecha": "2026-11-16",
+   "linea": "C",
+   "detalle": [
+    "5: pasó de 3 a 5 paradas",
+    "5: 2 parada(s) nuevas o corridas de lugar",
+    "Sentido 7: nuevo",
+    "Sentido 8: nuevo",
+    "Sentido 40: nuevo"
+   ]
+  },
+  {
+   "fecha": "2026-11-16",
+   "linea": "B",
+   "detalle": [
+    "3: pasó de 18 a 21 paradas",
+    "3: 3 parada(s) nuevas o corridas de lugar"
+   ]
+  },
   {
    "fecha": "2026-11-15",
    "linea": "L",
