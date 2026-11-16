@@ -295,6 +295,18 @@ console.log('Colectivos estimados en el mapa y viajes con trasbordo');
   }
 }
 
+console.log('Solo colectivos que todavía no pasaron (hora actual)');
+{
+  const micro = M.aMin('15:10'), base = { lineas, planillas, origen: MI_PARADA, destino: TERMINAL, tipo: 'domingo', limite: micro - 20, tope: micro, cfg };
+  const temprano = M.planificar({ ...base, ahora: M.aMin('13:00') }), tarde = M.planificar({ ...base, ahora: M.aMin('13:50') });
+  ok(temprano.recomendado && h(temprano.recomendado.salida.t) === '13:42', 'a las 13:00 el recomendado (pasa 13:47) todavía sirve');
+  ok(!tarde.recomendado && !tarde.anterior && tarde.viajes.every(v => v.tSube >= M.aMin('13:50')), 'a las 13:50 el de las 13:47 ya pasó: no se ofrece ni él ni el anterior');
+  const salir = M.planificar({ lineas, planillas, origen: MI_PARADA, destino: TERMINAL, tipo: 'domingo', desde: M.aMin('12:00'), ahora: M.aMin('14:30'), cfg });
+  ok(salir.proximos.length > 0 && salir.proximos.every(v => v.tSube >= M.aMin('14:30')), 'en "salgo desde" con la hora actual 14:30 solo aparecen los que pasan después');
+  const ayer = M.planificar({ ...base, ahora: null });
+  ok(ayer.recomendado && h(ayer.recomendado.salida.t) === '13:42', 'para otro día (sin hora actual) se ven todos los servicios');
+}
+
 console.log('Recolector de horarios de Paraná Online');
 {
   const H = await import('./horarios.mjs');

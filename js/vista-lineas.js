@@ -101,6 +101,12 @@ function panelHistorial(L) {
     h('p', { class: 'suave chico' }, 'Cada día la app guarda cuántos servicios tuvo la línea y a qué hora empezó y terminó, para ver cómo cambia con el tiempo. El detalle de cada día está en data/historial/ del repositorio.'), cuerpo);
 }
 
+/** Abre la pestaña Líneas en una línea (y sentido) para consultar todos sus horarios. */
+export function irALinea(id, sentido) {
+  sel.linea = id; if (sentido) sel.sentido = sentido; sel.tipo = null;
+  if (location.hash === '#lineas') window.dispatchEvent(new HashChangeEvent('hashchange')); else location.hash = '#lineas';
+}
+
 export function vistaLineas(raiz) {
   const repintar = () => vistaLineas(raiz);
   if (sel.linea !== VIVO && !D.lineas.some(l => l.id === sel.linea)) sel.linea = VIVO;

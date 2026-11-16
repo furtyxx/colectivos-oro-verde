@@ -327,8 +327,9 @@ export function viajesDeBloques(op, T, cfg) {
  * Planifica un viaje para un tipo de día.
  *   modo llegada: { limite, tope }  -> limite = hora a la que querés estar; tope = hora en que ya es tarde (sale el micro)
  *   modo salida:  { desde }         -> próximos servicios a partir de esa hora
+ *   ahora (opcional): minutos del día; descarta los colectivos que ya pasaron por tu parada
  */
-export function planificar({ lineas, planillas = [], horarios = null, origen, destino, tipo, limite = null, tope = null, desde = null, cfg }) {
+export function planificar({ lineas, planillas = [], horarios = null, origen, destino, tipo, limite = null, tope = null, desde = null, ahora = null, cfg }) {
   const opciones = opcionesDeViaje(lineas, origen, destino, cfg);
   const viajes = [], sinPlanilla = [];
   for (const op of opciones) {
@@ -336,6 +337,7 @@ export function planificar({ lineas, planillas = [], horarios = null, origen, de
     if (todos.length) viajes.push(...todos); else sinPlanilla.push(op);
   }
   viajes.sort((a, b) => a.tSube - b.tSube || a.tLlega - b.tLlega);
+  if (ahora != null) for (let i = viajes.length - 1; i >= 0; i--) if (viajes[i].tSube < ahora) viajes.splice(i, 1);   // los que ya pasaron no sirven
   const res = { tipo, opciones, sinPlanilla, viajes, recomendado: null, anterior: null, justo: null, proximos: [] };
   if (limite != null) {
     const llegan = viajes.filter(v => v.tLlega <= limite);
@@ -594,7 +596,7 @@ export function serviciosDeOpcion(op, { planillas = [], horarios = null, tipo, c
  *   { desde }   salgo a partir de esa hora      → el que llega lo antes posible
  * Devuelve { rutas: [{ servicios[], tSalir, tLlega, trasbordos, espera }], sinHorario: [ruta…] }.
  */
-export function planificarRutas({ lineas, planillas = [], horarios = null, origen, destino, tipo, limite = null, desde = null, cfg, max = 5, directos = [] }) {
+export function planificarRutas({ lineas, planillas = [], horarios = null, origen, destino, tipo, limite = null, desde = null, ahora = null, cfg, max = 5, directos = [] }) {
   const margen = cfg.margenTrasbordo ?? 3;
   const cands = rutasConTrasbordo({ lineas, origen, destino, cfg });
   const rutas = [], sinHorario = [];
@@ -605,6 +607,7 @@ export function planificarRutas({ lineas, planillas = [], horarios = null, orige
     // para cada servicio posible del primer tramo, armo la cadena más temprana
     for (const v1 of listas[0]) {
       if (desde != null && v1.tSalir < desde) continue;
+      if (ahora != null && v1.tSube < ahora) continue;   // ese primer colectivo ya pasó
       const cadena = [v1];
       let ok = true;
       for (let i = 1; i < listas.length && ok; i++) {

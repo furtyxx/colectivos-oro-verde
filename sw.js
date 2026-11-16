@@ -2,7 +2,7 @@
 // Estrategia: SIEMPRE se pide primero a la red (revalidando, sin usar copias viejas del navegador) y se guarda
 // la respuesta; la copia guardada solo se usa si no hay conexión o la red tarda más de 6 s en contestar.
 // Así los archivos de la app nunca quedan mezclados entre versiones.
-const CACHE = 'colectivos-ov-v8';
+const CACHE = 'colectivos-ov-v9';
 const BASE = [
   './', 'index.html', 'manifest.webmanifest', 'css/app.css',
   'js/app.js', 'js/ui.js', 'js/estado.js', 'js/datos.js', 'js/motor.js', 'js/buscador.js', 'js/lector.js', 'js/ocr.js', 'js/tabla.js',

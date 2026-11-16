@@ -4,6 +4,7 @@ import { E, D, guardar, lugar, planillasListas, recordarLugar, cuandoLlega, tipo
 import { planificar, planificarRutas, opcionesDeViaje, tipoDeDia, aMin, aHora, NOMBRE_TIPO } from './motor.js';
 import { abrirBuscador, miUbicacion } from './buscador.js';
 import { iniciarViaje, iniciarRuta } from './vista-vivo.js';
+import { irALinea } from './vista-lineas.js';
 
 let aqui = null; // ubicación actual (no se guarda)
 const TIPOS = ['habil', 'sabado', 'domingo'];
@@ -42,7 +43,10 @@ function tarjeta(v, clase, etiqueta, ctx) {
     v.dudoso && h('p', { class: 'nota ojo chico' }, 'Este servicio sale de otra cabecera: no está confirmado que pase por tu parada ni a qué hora exacta.'),
     (!v.subeExacto || !v.bajaExacto) && h('p', { class: 'suave chico' }, `~ = hora estimada entre dos puntos ${v.fuente === 'sitio' ? 'de los horarios de Paraná Online' : 'de la planilla'}.`),
     h('p', { class: 'chico ' + (v.fuente === 'sitio' ? 'bien-txt' : 'ojo-txt') }, v.fuente === 'sitio' ? '✓ Horario publicado por Paraná Online' : '≈ Estimado con la planilla: todavía no tengo el horario de Paraná Online para este tramo'),
-    h('button', { class: 'btn pri', onclick: () => iniciarViaje(v, ctx) }, 'Iniciar este viaje'));
+    ctx.ahora != null && v.tSalir < ctx.ahora ? h('p', { class: 'nota ojo chico' }, `⚠ Tendrías que haber salido a las ${aHora(v.tSalir)}: apurate para llegar a la parada antes de que pase.`) : null,
+    h('div', { class: 'fila' },
+      h('button', { class: 'btn pri', onclick: () => iniciarViaje(v, ctx) }, 'Iniciar este viaje'),
+      h('button', { class: 'btn mini', onclick: () => irALinea(v.op.linea.id, v.op.sentido) }, 'Ver todos los horarios de la línea')));
 }
 
 /** Una ruta con varios colectivos, con horarios. */
@@ -105,6 +109,14 @@ function bloque(res, ctx) {
 
 export function vistaPlanear(raiz) {
   const repintar = () => vistaPlanear(raiz);
+  // cada minuto se actualiza solo (para que se vayan los colectivos que pasan), salvo que estés escribiendo, con un diálogo abierto o mirando más abajo
+  clearTimeout(vistaPlanear.t);
+  const tic = () => {
+    if (!raiz.isConnected || !(location.hash === '#planear' || !location.hash)) return;   // ya no estoy en esta pestaña
+    const ocupado = document.querySelector('dialog[open]') || ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName) || window.scrollY > 40;
+    if (ocupado) vistaPlanear.t = setTimeout(tic, 60000); else repintar();
+  };
+  vistaPlanear.t = setTimeout(tic, 60000);
   const P = E.plan;
   if (!P.fecha || P.fecha < hoyISO()) P.fecha = hoyISO();
   if (P.margen == null) P.margen = E.cfg.margen;
@@ -144,12 +156,13 @@ export function vistaPlanear(raiz) {
   // tipos de día con algún horario: del sitio, o de las planillas si está permitido usarlas
   const conPlanilla = TIPOS.filter(t => opciones.some(o => horarios?.[o.linea.id]?.[t] || (E.cfg.usarPlanillas !== false && planillas.some(p => p.tipo === t && p.linea === o.linea.id))));
   const hoy = P.fecha === hoyISO();
-  const ctx = { modo: P.modo, micro, destino, origen, fecha: P.fecha };
+  const ahora = hoy ? ahoraMin() : null;   // hoy solo cuentan los colectivos que todavía no pasaron; otro día, todos
+  const ctx = { modo: P.modo, micro, destino, origen, fecha: P.fecha, ahora };
   let directoOk = false, directos = () => [];
-  const calc = tipo => planificar({ lineas: D.lineas, planillas, horarios, origen, destino, tipo, cfg: E.cfg,
+  const calc = tipo => planificar({ lineas: D.lineas, planillas, horarios, origen, destino, tipo, cfg: E.cfg, ahora,
     ...(P.modo === 'llegar' ? { limite: micro - P.margen, tope: micro } : { desde: aMin(P.hora) ?? (hoy ? ahoraMin() : 0) }) });
 
-  salida.append(h('p', { class: 'suave' }, `${fechaLinda(P.fecha)}: ` + (P.tipo === 'auto' ? `tomo horario ${NOMBRE_TIPO[auto.tipo]} porque ${auto.motivo}.` : `elegiste horario ${NOMBRE_TIPO[principal]}.`) +
+  salida.append(h('p', { class: 'suave' }, `${fechaLinda(P.fecha)}` + (hoy ? ` (son las ${aHora(ahora)}: solo cuento los colectivos que todavía no pasaron)` : '') + ': ' + (P.tipo === 'auto' ? `tomo horario ${NOMBRE_TIPO[auto.tipo]} porque ${auto.motivo}.` : `elegiste horario ${NOMBRE_TIPO[principal]}.`) +
     (P.modo === 'llegar' ? ` Tenés que estar a las ${aHora(micro - P.margen)}.` : '')));
 
   if (sinDirecto) {
@@ -180,7 +193,7 @@ export function vistaPlanear(raiz) {
     if (hecho) return; hecho = true;
     cuerpoT.replaceChildren(h('p', { class: 'suave' }, 'Buscando combinaciones…'));
     setTimeout(() => {
-      const r = planificarRutas({ lineas: D.lineas, planillas, horarios, origen, destino, tipo: principal, cfg: E.cfg, directos: directos(),
+      const r = planificarRutas({ lineas: D.lineas, planillas, horarios, origen, destino, tipo: principal, cfg: E.cfg, ahora, directos: directos(),
         ...(P.modo === 'llegar' ? { limite: micro - P.margen } : { desde: aMin(P.hora) ?? (hoy ? ahoraMin() : 0) }) });
       poner(cuerpoT,
         ...r.rutas.map((x, i) => tarjetaRuta(x, ctx, i ? 'Otra opción' : P.modo === 'llegar' ? 'Recomendado' : 'La más rápida')),
