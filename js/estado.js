@@ -82,8 +82,8 @@ export function tipoAuto(fecha) {
 }
 
 // ---------- colectivos estimados en el mapa ----------
-export const COLOR_BUS = { hacia: '#0ea5e9', desde: '#a855f7' };   // hacia el Centro / desde el Centro
-export const LEYENDA_BUS = [['hacia el Centro', COLOR_BUS.hacia], ['desde el Centro', COLOR_BUS.desde]];
+export const COLOR_BUS = { ida: '#0ea5e9', vuelta: '#a855f7' };   // celeste = ida, violeta = vuelta
+export const LEYENDA_BUS = [['Ida (celeste)', COLOR_BUS.ida], ['Vuelta (violeta)', COLOR_BUS.vuelta]];
 
 /** Colectivos que estarían circulando ahora (estimados con los horarios por parada). ids = solo esas líneas. */
 export function busesAhora(ids = null) {
@@ -92,7 +92,7 @@ export function busesAhora(ids = null) {
   return busesEnVivo({ lineas: D.lineas, horarios: D.horarios.lineas, tipo: tipoAuto(hoyISO()).tipo, ahora, ids });
 }
 /** Para dibujarlos en el mapa: un círculo con el número de línea, del color del sentido. */
-export const busesParaMapa = lista => lista.map(b => ({ lat: b.lat, lon: b.lon, color: b.hacia ? COLOR_BUS.hacia : COLOR_BUS.desde, texto: b.linea.id.replace('-', '') }));
+export const busesParaMapa = lista => lista.map(b => ({ lat: b.lat, lon: b.lon, color: b.ida ? COLOR_BUS.ida : COLOR_BUS.vuelta, texto: b.linea.id.replace('-', '') }));
 
 /** Vuelve a bajar los horarios (los junta una tarea de GitHub cada hora). */
 export async function refrescarHorarios() {

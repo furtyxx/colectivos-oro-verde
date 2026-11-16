@@ -46,7 +46,7 @@ function mapaEnVivo({ ids, rutas = [], paradas = [], clave, alto = 400, lista = 
       h('p', { class: 'suave chico' }, buses.length ? `${buses.length} colectivo(s) circulando ahora, según los horarios (estimado, no es el GPS real). Actualizado ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}.`
         : D.horarios ? 'Ahora no hay colectivos circulando según los horarios que tengo (o todavía no tengo los de este tramo del día).' : 'Todavía no cargaron los horarios.'),
       buses.length ? h('details', {}, h('summary', { class: 'suave' }, 'Ver la lista'), h('ul', { class: 'lista' }, buses.sort((a, b) => a.linea.id.localeCompare(b.linea.id, 'es', { numeric: true })).map(b => h('li', { style: 'padding:6px 0' },
-        h('strong', {}, b.linea.nombre), ` ${b.hacia ? 'hacia el Centro' : 'desde el Centro'}`, h('small', {}, `entre ${b.anterior} y ${b.proxima} · llega ${aHora(b.tProxima % 1440)}`)))) ) : null);
+        h('strong', {}, b.linea.nombre), ` · ${b.ida ? 'Ida' : 'Vuelta'}`, h('small', {}, `${b.linea.sentidos[b.sentido]?.desc || ''} · entre ${b.anterior} y ${b.proxima} · llega ${aHora(b.tProxima % 1440)}`)))) ) : null);
   };
   pintar();
   let n = 0;

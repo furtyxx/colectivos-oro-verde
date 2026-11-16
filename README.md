@@ -51,7 +51,7 @@ Esta app no tiene relación con ERSA ni con Paraná Online. Los horarios depende
 ## Viajes con trasbordo y colectivos en el mapa
 
 - Si no hay línea directa (o conviene combinar), `rutasConTrasbordo` busca hasta 3 colectivos de líneas distintas con paradas de cambio a ≤ 300 m, y `planificarRutas` encadena los horarios (el siguiente sale después de que llegás). No se ofrece un trasbordo si en directo salís después y llegás antes.
-- La pestaña Líneas → "En vivo" dibuja dónde estaría cada colectivo ahora (interpolando entre paradas con horario), con un color para los que van hacia el Centro y otro para los que vienen. Son estimaciones con el horario programado, no el GPS real de los coches.
+- La pestaña Líneas → "En vivo" dibuja dónde estaría cada colectivo ahora (interpolando entre paradas con horario), con un color para los de ida (celeste) y otro para los de vuelta (violeta). Son estimaciones con el horario programado, no el GPS real de los coches.
 - Los mapas dibujan las calles de OpenStreetMap (`data/calles.json`), se mueven arrastrando y se acercan con ＋/－ o pellizcando.
 
 ## En viaje

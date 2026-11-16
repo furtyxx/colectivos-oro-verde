@@ -410,11 +410,12 @@ export function puntoEn(pts, m) {
   return { lat: u[0], lon: u[1] };
 }
 
-/** ¿Este sentido va hacia el centro (Casa de Gobierno)? Para pintar ida y vuelta de colores distintos. */
-export function haciaElCentro(linea, sentido) {
-  const partes = sinAcentos(linea.sentidos[sentido]?.desc || '').split(/\s*(?:→|>)\s*/);
-  const centro = s => /centro|casa de gobierno|c\.? ?gob/.test(s || '');
-  if (partes.length > 1) { if (centro(partes[partes.length - 1])) return true; if (centro(partes[0])) return false; }
+/**
+ * ¿Este sentido es la "ida" de la línea? En las interurbanas es el sentido llamado "ida"; en las urbanas cada
+ * servicio tiene su número y, como en Paraná Online, el primero de cada par es la ida y el segundo la vuelta.
+ */
+export function esIda(linea, sentido) {
+  if (sentido === 'ida' || sentido === 'vuelta') return sentido === 'ida';
   return Object.keys(linea.sentidos).indexOf(sentido) % 2 === 0;
 }
 
@@ -445,7 +446,7 @@ export function busesEnVivo({ lineas, horarios, tipo, ahora: ahora0, ids = null 
         if (ahora < an[0].t || ahora > an[an.length - 1].t) continue;
         const i = Math.max(1, an.findIndex(a => a.t >= ahora)), a0 = an[i - 1], a1 = an[i];
         const f = a1.t === a0.t ? 0 : Math.min(1, Math.max(0, (ahora - a0.t) / (a1.t - a0.t))), m = a0.m + (a1.m - a0.m) * f;
-        out.push({ linea: L, sentido: b.sentido, ramal: b.ramal, ...puntoEn(R.pts, m), m, anterior: a0.nombre, proxima: a1.nombre, tProxima: a1.t, hacia: haciaElCentro(L, b.sentido) });
+        out.push({ linea: L, sentido: b.sentido, ramal: b.ramal, ...puntoEn(R.pts, m), m, anterior: a0.nombre, proxima: a1.nombre, tProxima: a1.t, ida: esIda(L, b.sentido) });
       }
     }
   }

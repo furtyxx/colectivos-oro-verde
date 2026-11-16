@@ -251,7 +251,7 @@ console.log('Colectivos estimados en el mapa y viajes con trasbordo');
   const largo = S6.ramales[0].largo, mitad = M.puntoEn(pts6, largo / 2), ini = M.puntoEn(pts6, 0), fin = M.puntoEn(pts6, largo + 500);
   ok(M.proyectar(pts6, mitad).fuera < 5 && Math.abs(M.proyectar(pts6, mitad).m - largo / 2) < 30, 'puntoEn: a mitad del recorrido cae sobre el recorrido, a la mitad');
   ok(M.dist(ini, { lat: pts6[0][0], lon: pts6[0][1] }) < 1 && M.dist(fin, { lat: pts6.at(-1)[0], lon: pts6.at(-1)[1] }) < 1, 'puntoEn: antes del comienzo y después del final queda en los extremos');
-  ok(M.haciaElCentro(L('6'), 'ida') && !M.haciaElCentro(L('6'), 'vuelta') && M.haciaElCentro(L('A'), Object.keys(L('A').sentidos)[0]) !== M.haciaElCentro(L('A'), Object.keys(L('A').sentidos)[1]), 'sentidos: hacia y desde el Centro tienen colores distintos');
+  ok(M.esIda(L('6'), 'ida') && !M.esIda(L('6'), 'vuelta') && M.esIda(L('A'), Object.keys(L('A').sentidos)[0]) && !M.esIda(L('A'), Object.keys(L('A').sentidos)[1]), 'sentidos: ida y vuelta tienen colores distintos (interurbanas y urbanas)');
 
   // un colectivo de la línea 6 que sale a las 16:00 y pasa por 12 paradas con horario
   const ps = S6.paradas.filter((p, i) => p.m[0] != null && i % 4 === 0);
@@ -259,7 +259,7 @@ console.log('Colectivos estimados en el mapa y viajes con trasbordo');
   const hor = { 6: { domingo: { franjas: '1'.repeat(48), bloques: [bloque] } } };
   const medio = M.aMin('16:00') + Math.round(ps[Math.floor(ps.length / 2)].m[0] / 330);
   const b1 = M.busesEnVivo({ lineas, horarios: hor, tipo: 'domingo', ahora: medio });
-  ok(b1.length === 1 && b1[0].hacia && M.proyectar(pts6, b1[0]).fuera < 30 && Math.abs(M.proyectar(pts6, b1[0]).m - ps[Math.floor(ps.length / 2)].m[0]) < 400, `a las ${h(medio)} el colectivo está a mitad de recorrido (${b1[0] ? b1[0].anterior : '—'} → ${b1[0] ? b1[0].proxima : '—'})`);
+  ok(b1.length === 1 && b1[0].ida && M.proyectar(pts6, b1[0]).fuera < 30 && Math.abs(M.proyectar(pts6, b1[0]).m - ps[Math.floor(ps.length / 2)].m[0]) < 400, `a las ${h(medio)} el colectivo está a mitad de recorrido (${b1[0] ? b1[0].anterior : '—'} → ${b1[0] ? b1[0].proxima : '—'})`);
   ok(M.busesEnVivo({ lineas, horarios: hor, tipo: 'domingo', ahora: M.aMin('15:30') }).length === 0 && M.busesEnVivo({ lineas, horarios: hor, tipo: 'domingo', ahora: M.aMin('23:50') }).length === 0, 'antes de salir y después de terminar no aparece');
   ok(M.busesEnVivo({ lineas, horarios: hor, tipo: 'habil', ahora: medio }).length === 0 && M.busesEnVivo({ lineas, horarios: hor, tipo: 'domingo', ahora: medio, ids: ['15'] }).length === 0, 'respeta el tipo de día y el filtro de líneas');
   const pasaMedianoche = { 6: { domingo: { franjas: '1'.repeat(48), bloques: [{ ...bloque, filas: [bloque.filas[0].map((t, i) => M.aMin('23:40') + Math.round(ps[i].m[0] / 330))] }] } } };
