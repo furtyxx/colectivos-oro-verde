@@ -34,6 +34,8 @@
     // Si la app no arranca (por ejemplo, quedó una copia vieja guardada) se ofrece repararla sin perder planillas ni lugares.
     window.__rescate = function (detalle) {
       var v = document.getElementById('vista'); if (!v) return;
+      // un fallo suelto del servidor (503, corte de internet) suele arreglarse solo: se reintenta una vez antes de mostrar el aviso
+      try { if (!sessionStorage.getItem('reintento')) { sessionStorage.setItem('reintento', '1'); location.reload(); return; } } catch (e) { /* sin sessionStorage: muestro el aviso */ }
       v.innerHTML = '<div class="nota mal"><strong>La app no terminó de arrancar.</strong><p>Casi siempre es una copia vieja guardada en el teléfono. Tocá "Reparar": baja todo de nuevo y no borra tus planillas ni tus lugares.</p><p class="chico suave" id="rescate-detalle"></p><button class="btn pri" id="reparar">Reparar y reiniciar</button></div>';
       document.getElementById('rescate-detalle').textContent = detalle || '';
       document.getElementById('reparar').onclick = function () {

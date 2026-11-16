@@ -39,6 +39,7 @@ async function iniciar() {
   if (E.viaje && !location.hash && !recibido()) location.hash = '#vivo';
   rutear();
   window.__listo = true; clearTimeout(window.__arranque);
+  try { sessionStorage.removeItem('reintento'); } catch { /* da igual */ }
   cargarCalles().catch(() => {}); // las calles de fondo de los mapas se cargan después, sin frenar el arranque
   await atenderCompartido();
 }
