@@ -25,7 +25,7 @@ function accionesParada(L, s, sentido) {
   const usar = clave => { E.plan[clave] = recordarLugar({ nombre: s.nombre, lat: s.lat, lon: s.lon }).id; guardar(); dl.cerrar(); location.hash = '#planear'; };
   const dl = dialogo(s.nombre, [
     h('p', { class: 'suave' }, `${L.nombre} · parada ${s.n}` + (s.web ? ` · en Paraná Online: ${s.web}` : ' · nombre deducido del mapa')),
-    ...horariosDeParada(L, sentido, s).map(x => h('p', { class: 'chico' }, h('strong', {}, `Pasa ${NOMBRE_TIPO[x.tipo]}: `), x.horas.map(aHora).join(' · '), x.completo ? '' : ' (todavía incompleto)')),
+    ...horariosDeParada(L, sentido, s).map(x => h('p', { class: 'chico' }, h('strong', {}, `Pasa ${NOMBRE_TIPO[x.tipo]} (fuente: Paraná Online): `), x.horas.map(aHora).join(' · '), x.completo ? '' : ' (todavía incompleto)')),
     h('button', { class: 'btn pri', onclick: () => usar('destino') }, 'Quiero ir acá (destino)'),
     h('button', { class: 'btn', onclick: () => usar('origen') }, 'Salgo desde acá (origen)'),
     h('button', { class: 'btn', onclick: () => { const l = recordarLugar({ nombre: s.nombre, lat: s.lat, lon: s.lon }); delete l.reciente; guardar(); toast('Guardado en tus lugares'); dl.cerrar(); } }, '⭐ Guardar en mis lugares'),
@@ -43,7 +43,7 @@ function mapaEnVivo({ ids, rutas = [], paradas = [], clave, alto = 400, lista = 
     poner(caja, mapa({ clave, calles: D.calles, rutas, paradas, buses: busesParaMapa(buses), alto, leyenda: leyendaBuses() }));
     if (!lista) return;
     poner(detalle,
-      h('p', { class: 'suave chico' }, buses.length ? `${buses.length} colectivo(s) circulando ahora, según los horarios (estimado, no es el GPS real). Actualizado ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}.`
+      h('p', { class: 'suave chico' }, buses.length ? `${buses.length} colectivo(s) circulando ahora, según los horarios de Paraná Online (estimado, no es el GPS real). Actualizado ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}.`
         : D.horarios ? 'Ahora no hay colectivos circulando según los horarios que tengo (o todavía no tengo los de este tramo del día).' : 'Todavía no cargaron los horarios.'),
       buses.length ? h('details', {}, h('summary', { class: 'suave' }, 'Ver la lista'), h('ul', { class: 'lista' }, buses.sort((a, b) => a.linea.id.localeCompare(b.linea.id, 'es', { numeric: true })).map(b => h('li', { style: 'padding:6px 0' },
         h('strong', {}, b.linea.nombre), ` · ${b.ida ? 'Ida' : 'Vuelta'}`, h('small', {}, `${b.linea.sentidos[b.sentido]?.desc || ''} · entre ${b.anterior} y ${b.proxima} · llega ${aHora(b.tProxima % 1440)}`)))) ) : null);
@@ -82,7 +82,7 @@ function panelHorarios(L, sentido, repintar) {
     tipos.length ? h('div', { class: 'seg', role: 'group', 'aria-label': 'Tipo de día' }, tipos.map(t => h('button', { 'aria-pressed': String(t === tipo), onclick: () => { sel.tipo = t; repintar(); } }, NOMBRE_TIPO[t][0].toUpperCase() + NOMBRE_TIPO[t].slice(1) + (t === auto ? ' (hoy)' : '')))) : null,
     !T ? h('p', { class: 'suave' }, 'Todavía no tengo horarios de esta línea: Paraná Online los muestra de a ~2 horas y la app los va juntando solos.')
       : h('div', {}, h('p', { class: (cob >= 85 ? 'bien-txt' : 'ojo-txt') + ' chico' }, cob >= 85 ? `✓ Horario completo (${filas.length} servicios).` : `Horario incompleto: tengo ${cob}% del día (${filas.length} servicios). Se completa solo con las lecturas de Paraná Online.`),
-        h('p', { class: 'suave chico' }, 'Tocá un servicio para ver a qué hora pasa por cada parada.'),
+        h('p', { class: 'suave chico' }, 'Fuente: Paraná Online. Tocá un servicio para ver a qué hora pasa por cada parada.'),
         h('div', { class: 'chips-hora' }, filas.map(x => h('button', { class: 'btn mini', onclick: () => ver(x) }, aHora(x.t0 % 1440))))));
 }
 

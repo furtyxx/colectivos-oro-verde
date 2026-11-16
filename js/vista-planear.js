@@ -1,6 +1,6 @@
 // Pestaña "Planear": de dónde a dónde, a qué hora, y qué colectivo conviene.
 import { h, toast, fmtM, hoyISO, ahoraMin, fechaLinda, poner } from './ui.js';
-import { E, D, guardar, lugar, planillasListas, recordarLugar, cuandoLlega, tipoAuto } from './estado.js';
+import { E, D, guardar, lugar, planillasListas, recordarLugar, cuandoLlega, tipoAuto, fuenteTxt } from './estado.js';
 import { planificar, planificarRutas, opcionesDeViaje, tipoDeDia, aMin, aHora, NOMBRE_TIPO } from './motor.js';
 import { abrirBuscador, miUbicacion } from './buscador.js';
 import { iniciarViaje, iniciarRuta } from './vista-vivo.js';
@@ -41,8 +41,8 @@ function tarjeta(v, clase, etiqueta, ctx) {
     h('div', {}, h('div', { class: 'grande-hora' }, aHora(v.salida.t)), h('div', { class: 'suave' }, v.salida.enParada ? 'pasa por tu parada' : 'sale de ' + v.salida.nombre)),
     h('ul', { class: 'pasos' }, pasos),
     v.dudoso && h('p', { class: 'nota ojo chico' }, 'Este servicio sale de otra cabecera: no está confirmado que pase por tu parada ni a qué hora exacta.'),
-    (!v.subeExacto || !v.bajaExacto) && h('p', { class: 'suave chico' }, `~ = hora estimada entre dos puntos ${v.fuente === 'sitio' ? 'de los horarios de Paraná Online' : 'de la planilla'}.`),
-    h('p', { class: 'chico ' + (v.fuente === 'sitio' ? 'bien-txt' : 'ojo-txt') }, v.fuente === 'sitio' ? '✓ Horario publicado por Paraná Online' : '≈ Estimado con la planilla: todavía no tengo el horario de Paraná Online para este tramo'),
+    (!v.subeExacto || !v.bajaExacto) && h('p', { class: 'suave chico' }, `~ = hora estimada entre dos puntos de ${fuenteTxt(v.fuente) === 'Paraná Online' ? 'los horarios de Paraná Online' : 'la planilla'}.`),
+    h('p', { class: 'chico ' + (v.fuente === 'sitio' ? 'bien-txt' : 'ojo-txt') }, 'Fuente del horario: ', h('strong', {}, fuenteTxt(v.fuente)), v.fuente === 'sitio' ? ' (horario programado, no es el GPS del coche)' : ' — todavía no tengo el horario de Paraná Online para este tramo'),
     ctx.ahora != null && v.tSalir < ctx.ahora ? h('p', { class: 'nota ojo chico' }, `⚠ Tendrías que haber salido a las ${aHora(v.tSalir)}: apurate para llegar a la parada antes de que pase.`) : null,
     h('div', { class: 'fila' },
       h('button', { class: 'btn pri', onclick: () => iniciarViaje(v, ctx) }, 'Iniciar este viaje'),
@@ -67,7 +67,7 @@ function tarjetaRuta(r, ctx, etiqueta) {
     h('div', { class: 'cab' }, h('span', { class: 'etq' }, etiqueta), ...sv.map(v => h('span', { class: 'lin' }, v.op.linea.nombre.replace('Línea ', ''))), h('span', { class: 'suave chico' }, `${sv.length} colectivos · ${r.tLlega - r.tSalir} min en total`)),
     h('div', {}, h('div', { class: 'grande-hora' }, aHora(r.tSalir)), h('div', { class: 'suave' }, 'hora de salir caminando')),
     h('ul', { class: 'pasos' }, pasos),
-    h('p', { class: 'chico ' + (estimado ? 'ojo-txt' : 'bien-txt') }, estimado ? '≈ Algún tramo está estimado con la planilla: todavía no tengo ese horario de Paraná Online' : '✓ Horarios publicados por Paraná Online'),
+    h('p', { class: 'chico ' + (estimado ? 'ojo-txt' : 'bien-txt') }, 'Fuente de los horarios: ', h('strong', {}, sv.map(v => `${v.op.linea.nombre} → ${fuenteTxt(v.fuente)}`).join(' · '))),
     h('button', { class: 'btn pri', onclick: () => iniciarRuta(r, ctx) }, 'Iniciar este viaje'));
 }
 

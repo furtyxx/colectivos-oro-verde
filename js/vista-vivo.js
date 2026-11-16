@@ -1,6 +1,6 @@
 // Pestaña "En viaje": pasos con cuenta regresiva, "Ya subí", avisos de bajada por GPS (o por horario).
 import { h, $, toast, fmtM, hoyISO, gmapsAPie, mapa, confirmar, poner } from './ui.js';
-import { E, D, guardar, linea, cuandoLlega, calleListas, cargarCalles, busesAhora, busesParaMapa, LEYENDA_BUS } from './estado.js';
+import { E, D, guardar, linea, cuandoLlega, calleListas, cargarCalles, busesAhora, busesParaMapa, LEYENDA_BUS, fuenteTxt } from './estado.js';
 import { aHora, dist, proyectar } from './motor.js';
 
 const ORDEN = { nada: 0, prep: 1, timbre: 2, bajar: 3, caminando: 4, fin: 5 };
@@ -18,7 +18,7 @@ function armarTramo(v, ctx, origenNombre, destino) {
     minOrigen: v.op.minOrigen, minDestino: v.op.minDestino, mDestino: v.op.mDestino,
     refs: v.refs.filter(r => r.t > v.tSube && r.t < v.tBaja), micro: ctx.micro ?? null,
     subeExacto: v.subeExacto, bajaExacto: v.bajaExacto, dudoso: v.dudoso,
-    avisos: false, subiReal: null, bajeReal: null, etapa: 'nada', siguientes: [], tramo: { i: 1, de: 1 },
+    avisos: false, subiReal: null, bajeReal: null, etapa: 'nada', siguientes: [], tramo: { i: 1, de: 1 }, fuente: v.fuente || 'planilla',
   };
 }
 
@@ -224,7 +224,7 @@ function pasos() {
     V.minOrigen > 0 && { t: V.tSalir, txt: 'Salir caminando a la parada', sub: `${V.minOrigen} min hasta ${V.sube.nombre}` },
     { t: V.tParada, txt: 'Estar en la parada', sub: `${V.sube.nombre} · puede pasar desde esta hora` },
     { t: subio ? V.subiReal : V.tSube, txt: subio ? 'Subiste' : `Pasa el ${V.lineaNombre}`, sub: subio ? (T.atraso ? `${Math.abs(T.atraso)} min ${T.atraso > 0 ? 'después' : 'antes'} del horario (${aHora(V.tSube)})` : 'en horario') : `horario${V.subeExacto ? '' : ' estimado'} en tu parada`, clave: 'sube' },
-    ...T.refs.filter(r => V.bajeReal == null || r.t < V.bajeReal).map(r => ({ t: r.t, txt: r.nombre, sub: 'punto de control de la planilla' })),
+    ...T.refs.filter(r => V.bajeReal == null || r.t < V.bajeReal).map(r => ({ t: r.t, txt: r.nombre, sub: V.fuente === 'sitio' ? 'parada con horario de Paraná Online' : 'punto de control de la planilla' })),
     { t: V.bajeReal ?? T.tBaja, txt: V.bajeReal != null ? 'Bajaste' : `Tocar timbre y bajar en ${V.baja.nombre}`, sub: V.bajeReal != null ? V.baja.nombre : 'te aviso antes con vibración', clave: 'baja' },
     { t: T.tLlega, txt: `Llegar a ${V.destino.nombre}`, sub: V.minDestino ? `${V.minDestino} min caminando (${fmtM(V.mDestino)})` : 'la parada está al lado' },
     V.micro != null && { t: V.micro, txt: 'Sale tu micro', sub: T.tLlega <= V.micro ? `llegás con ${Math.round(V.micro - T.tLlega)} min de margen` : '⚠ con este atraso no llegás' },
@@ -314,6 +314,7 @@ function pintar() {
       h('div', { class: 'fila' }, h('span', { class: 'lin' }, V.lineaNombre), h('strong', { class: 'crece' }, `${V.origen.nombre} → ${V.destino.nombre}`)),
       h('p', { class: 'suave' }, `Servicio que sale de ${V.salida.nombre} a las ${aHora(V.salida.t)} · ${V.desc}`),
       otroDia && h('p', { class: 'nota ojo' }, `Este viaje es para el ${V.fecha.split('-').reverse().join('/')}.`),
+      V.fuente && h('p', { class: 'suave chico' }, 'Fuente de los horarios: ', h('strong', {}, fuenteTxt(V.fuente)), V.fuente === 'sitio' ? '' : ' (estimado)'),
       V.dudoso && h('p', { class: 'nota ojo chico' }, 'Servicio dudoso: no está confirmado que pase por tu parada.'),
       h('div', { class: 'cuenta' }, h('div', { class: 'num' }, '…'), h('div', { class: 'cap suave' }, '')),
       ...acciones,
