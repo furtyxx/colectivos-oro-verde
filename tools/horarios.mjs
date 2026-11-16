@@ -22,6 +22,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
+import { indiceCalles, ubicarEnRecorrido, dist } from './geo.mjs';
 
 const RAIZ = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const DATA = path.join(RAIZ, 'data'), CRUDO = path.join(DATA, 'horarios', 'crudo'), HISTORIAL = path.join(DATA, 'historial');
@@ -152,8 +153,60 @@ export function verosimil(fila, nodos) {
   return true;
 }
 
-/** Acumulado de una línea + su recorrido -> bloques de servicios por tipo de día. */
-export function derivar(crudo, linea) {
+const bonito = s => s.toLowerCase().replace(/(^|[\s.(])\p{L}/gu, c => c.toUpperCase()).replace(/\b(De|Del|Y|La|Las|Los|El)\b/g, w => w.toLowerCase()).replace(/^y /, 'Y ');
+
+/**
+ * Ubica una parada del sitio ("AV. DE LAS AMERICAS Y ALEJO PEIRET", o "CALLE A - CALLE B" en las urbanas) sobre un recorrido:
+ * busca el cruce de esas dos calles y se queda con el que cae a ≤ 70 m del trazo. Devuelve { lat, lon, m (metros desde el comienzo) }.
+ */
+export function colocar(nombre, pts, geo, urbana = false) {
+  const trozos = nombre.split(urbana ? /\s+-\s+/ : /\s+Y\s+/).map(x => x.trim()).filter(Boolean);
+  // "RUTA PROVINCIAL 11 Y FACULTAD DE CIENCIA Y TECNOLOGIA" tiene más de un " Y ": pruebo cada corte posible
+  for (let k = 1; k < trozos.length; k++) {
+    const a = trozos.slice(0, k).join(urbana ? ' - ' : ' Y '), b = trozos.slice(k).join(urbana ? ' - ' : ' Y ');
+    let mejor = null;
+    for (const c of geo.cruces(a, b)) { const u = ubicarEnRecorrido(c, pts); if (u.d <= 70 && (!mejor || u.d < mejor.d)) mejor = { lat: c[0], lon: c[1], m: Math.round(u.m), d: u.d }; }
+    if (mejor) return mejor;
+  }
+  return null;
+}
+
+const VEL_ESTIMADA = 330;   // metros por minuto (~20 km/h) para pasar de una diferencia de horario a una distancia
+
+/** Punto [lat, lon] a m metros del comienzo de un recorrido. */
+function puntoEnRecorrido(pts, m) {
+  let acum = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const l = dist(pts[i - 1], pts[i]);
+    if (acum + l >= m) { const t = l ? (m - acum) / l : 0; return [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * t, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * t]; }
+    acum += l;
+  }
+  return pts[pts.length - 1];
+}
+
+/**
+ * Para una parada que no se pudo ubicar por nombre (por ejemplo "AV. ALMAFUERTE Y UNIVERSIDAD TEC."): sus horarios son
+ * los mismos de otra parada ya ubicada, corridos unos minutos (el colectivo tarda lo mismo todos los días). Busco esa
+ * parada y ese corrimiento, y la pongo a esa distancia (a ~20 km/h). Es aproximado: solo mueve unos cientos de metros
+ * la posición estimada del colectivo, no cambia ningún horario.
+ */
+export function colocarPorHorario(p, resueltos, largo) {
+  let mejor = null;
+  for (const r of resueltos) {
+    const conjunto = new Set(r.horas);
+    for (let d = -25; d <= 25; d++) {
+      let coinciden = 0;
+      for (const t of p.horas) if (conjunto.has(t - d)) coinciden++;
+      if (coinciden >= Math.max(2, Math.ceil(p.horas.length * 0.6)) && (!mejor || coinciden > mejor.coinciden || (coinciden === mejor.coinciden && Math.abs(d) < Math.abs(mejor.d)))) mejor = { r, d, coinciden };
+    }
+  }
+  if (!mejor) return null;
+  const m = Math.max(0, Math.min(largo, mejor.r.m + mejor.d * VEL_ESTIMADA));
+  return { m: Math.round(m), aprox: true };
+}
+
+/** Acumulado de una línea + su recorrido -> bloques de servicios por tipo de día. geo = índice de calles (para ubicar las paradas del sitio que el mapa no trae). */
+export function derivar(crudo, linea, geo = null) {
   const out = {};
   for (const [tipo, T] of Object.entries(crudo.tipos)) {
     const ultima = [...T.fechas].sort().at(-1);
@@ -173,11 +226,28 @@ export function derivar(crudo, linea) {
       const servicio = /^s(\d+)$/.exec(cartel)?.[1];                   // urbanas: el cartel es el servicio y ese es el sentido
       for (const [sentido, S] of Object.entries(linea.sentidos)) {
         if (servicio && sentido !== servicio) continue;
-        const porNombre = new Map(S.paradas.filter(s => s.web).map(s => [servicio && s.pid ? s.pid : s.web, s]));
-        const mias = paradas.filter(p => porNombre.has(servicio ? p.pid : p.nombre) && (!p.sentido || p.sentido === sentido))
-          .map(p => ({ ...p, nombre: servicio ? p.pid : p.nombre }));
-        S.ramales.forEach((_, ri) => {
-          const nodos = mias.map(p => ({ ...p, n: porNombre.get(p.nombre).n, m: porNombre.get(p.nombre).m[ri] })).filter(x => x.m != null).sort((a, b) => a.m - b.m);
+        const porClave = new Map(S.paradas.filter(s => s.web).map(s => [servicio && s.pid ? s.pid : s.web, s]));
+        const clave = p => (servicio ? p.pid : p.nombre);
+        const delSentido = paradas.filter(p => !p.sentido || p.sentido === sentido);
+        S.ramales.forEach((R, ri) => {
+          // paradas del sitio que son paradas del mapa
+          const base = delSentido.filter(p => porClave.has(clave(p)))
+            .map(p => ({ pid: p.pid, nombre: p.nombre, horas: p.horas, n: porClave.get(clave(p)).n, m: porClave.get(clave(p)).m[ri] })).filter(x => x.m != null);
+          // las demás: las ubico por el cruce de calles sobre este recorrido (así no se pierde ningún horario que muestra el sitio)
+          const extras = [];
+          if (geo) for (const p of delSentido) {
+            if (porClave.has(clave(p))) continue;
+            const u = colocar(p.nombre, R.pts, geo, !!servicio);
+            if (u) extras.push({ pid: p.pid, nombre: p.nombre, horas: p.horas, n: 1000 + extras.length, m: u.m, lat: u.lat, lon: u.lon, extra: true });
+          }
+          // las que tampoco se pueden ubicar por nombre: por su horario respecto de las ya ubicadas
+          const resueltos = [...base, ...extras];
+          if (resueltos.length >= 2) for (const p of delSentido) {
+            if (resueltos.some(x => x.pid === p.pid)) continue;
+            const u = colocarPorHorario(p, resueltos, R.largo || 1e9);
+            if (u) { const [la, lo] = puntoEnRecorrido(R.pts, u.m); extras.push({ pid: p.pid, nombre: p.nombre, horas: p.horas, n: 1000 + extras.length, m: u.m, lat: la, lon: lo, extra: true, aprox: true }); }
+          }
+          const nodos = [...base, ...extras].sort((a, b) => a.m - b.m);
           if (nodos.length < 2) return;
           const filas = encadenar(nodos).filter(f => verosimil(f, nodos));
           // puntaje: horarios que quedaron dentro de algún servicio de varias paradas
@@ -186,7 +256,11 @@ export function derivar(crudo, linea) {
         });
       }
       if (!mejor || !mejor.filas.length) continue;
-      bloques.push({ cartel, sentido: mejor.sentido, ramal: mejor.ramal, paradas: mejor.nodos.map(x => x.n), filas: mejor.filas });
+      const b = { cartel, sentido: mejor.sentido, ramal: mejor.ramal, paradas: mejor.nodos.map(x => x.n), filas: mejor.filas };
+      const ex = mejor.nodos.filter(x => x.extra);
+      // las paradas que no están en el mapa de la línea llevan su propio nombre y posición dentro del bloque (n >= 1000)
+      if (ex.length) b.extras = ex.map(x => ({ n: x.n, nombre: bonito(x.nombre), lat: Math.round(x.lat * 1e5) / 1e5, lon: Math.round(x.lon * 1e5) / 1e5, m: x.m, ...(x.aprox ? { aprox: true } : {}) }));
+      bloques.push(b);
     }
     if (bloques.length) out[tipo] = { fechas: T.fechas, franjas: T.franjas, bloques };
   }
@@ -218,9 +292,11 @@ async function muestrearLinea(L, fecha, min) {
 async function regenerar() {
   const { lineas } = JSON.parse(await fs.readFile(path.join(DATA, 'lineas.json'), 'utf8'));
   const salida = { generado: new Date().toISOString(), fuente: 'https://www.paranaonline.com.ar/colectivos-parana/', lineas: {} };
+  const calles = await leerJson(path.join(DATA, 'calles.json'), null);
+  const geo = calles ? indiceCalles(calles) : null;     // para ubicar las paradas del sitio que el mapa de la línea no trae
   for (const L of lineas) {
     const crudo = await leerJson(path.join(CRUDO, L.id + '.json'), { linea: L.id, tipos: {} });
-    const d = derivar(crudo, L);
+    const d = derivar(crudo, L, geo);
     if (Object.keys(d).length) salida.lineas[L.id] = d;
   }
   const destino = path.join(DATA, 'horarios.json');

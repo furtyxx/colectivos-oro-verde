@@ -1,6 +1,6 @@
 // Pestaña "En viaje": pasos con cuenta regresiva, "Ya subí", avisos de bajada por GPS (o por horario).
 import { h, $, toast, fmtM, hoyISO, gmapsAPie, mapa, confirmar, poner } from './ui.js';
-import { E, D, guardar, linea, cuandoLlega, calleListas, cargarCalles, busesAhora, busesParaMapa, LEYENDA_BUS, fuenteTxt } from './estado.js';
+import { E, D, guardar, linea, cuandoLlega, calleListas, cargarCalles, busesAhora, busesParaMapa, LEYENDA_BUS, SEGUIMIENTO, fuenteTxt } from './estado.js';
 import { aHora, dist, proyectar } from './motor.js';
 
 const ORDEN = { nada: 0, prep: 1, timbre: 2, bajar: 3, caminando: 4, fin: 5 };
@@ -264,7 +264,7 @@ function pintarMapa() {
   }
   if (!D.calles) { cargarCalles().catch(() => {}); calleListas.addEventListener('listas', pintarMapa, { once: true }); }
   const buses = busesAhora([V.linea]);   // los colectivos de esta línea, estimados con los horarios
-  poner(box, mapa({ clave: 'viaje-' + V.id, calles: D.calles, rutas: [pts], paradas: S.paradas, marcas, buses: busesParaMapa(buses), leyenda: buses.length ? LEYENDA_BUS.map(([t, c]) => h('span', {}, h('i', { style: `background:${c}` }), t)) : null }), h('div', { class: 'posicion' }, ...info.filter(Boolean)));
+  poner(box, mapa({ clave: 'viaje-' + V.id, calles: D.calles, rutas: [pts], paradas: S.paradas, marcas, buses: busesParaMapa(buses), leyenda: buses.length ? [...LEYENDA_BUS.map(([t, c]) => h('span', {}, h('i', { style: `background:${c}` }), t)), h('span', { style: 'flex-basis:100%' }, SEGUIMIENTO)] : null }), h('div', { class: 'posicion' }, ...info.filter(Boolean)));
 }
 
 function refrescar() { // actualiza solo números que cambian cada segundo

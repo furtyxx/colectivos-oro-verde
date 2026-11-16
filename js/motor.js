@@ -283,6 +283,16 @@ export function viajesDeOpcion(op, pl, cfg) {
   return out.sort((a, b) => a.tSube - b.tSube);
 }
 
+/**
+ * Parada a la que se refiere el número n de un bloque de horarios: las del mapa de la línea (n < 1000) o las que el sitio
+ * lista y el mapa no trae, ubicadas por el cruce de calles (b.extras). Devuelve { nombre, lat, lon, m } con m para el ramal del bloque.
+ */
+export function anclaDeBloque(S, b, n) {
+  if (n >= 1000) { const e = (b.extras || []).find(x => x.n === n); return e ? { nombre: e.nombre, lat: e.lat, lon: e.lon, m: e.m } : null; }
+  const s = S.paradas[n - 1];
+  return s ? { nombre: s.nombre, lat: s.lat, lon: s.lon, m: s.m[b.ramal] } : null;
+}
+
 /** Qué parte del día (0 a 1) tienen cargada los horarios por parada de una línea. */
 export const coberturaDe = T => (T ? [...(T.franjas || '')].filter(c => c === '1').length / 48 : 0);
 
@@ -301,7 +311,7 @@ export function viajesDeBloques(op, T, cfg) {
       const anclas = [];
       b.filas[fi].forEach((t, k) => {
         if (t == null) return;
-        const s = S.paradas[b.paradas[k] - 1], m = s?.m[ri];
+        const s = anclaDeBloque(S, b, b.paradas[k]), m = s?.m;
         if (m != null) anclas.push({ m, t, nombre: s.nombre });
       });
       anclas.sort((a, c) => a.m - c.m);
@@ -426,6 +436,7 @@ export function esIda(linea, sentido) {
  * por el recorrido. Solo aparecen los servicios cuyo horario cubre el momento actual (los demás todavía no
  * salieron, ya terminaron o no se conoce su tramo).
  */
+const MAX_ATRAS = 25;   // minutos antes de su primera parada con horario hasta los que se estima dónde viene
 export function busesEnVivo({ lineas, horarios, tipo, ahora: ahora0, ids = null }) {
   const out = [];
   // de madrugada también cuentan los servicios que siguen del día anterior (sus horarios pasan de las 24:00)
@@ -440,15 +451,28 @@ export function busesEnVivo({ lineas, horarios, tipo, ahora: ahora0, ids = null 
         const an = [];
         fila.forEach((t, k) => {
           if (t == null) return;
-          const s = S.paradas[b.paradas[k] - 1], m = s?.m[b.ramal];
+          const s = anclaDeBloque(S, b, b.paradas[k]), m = s?.m;
           if (m != null) an.push({ t, m, nombre: s.nombre });
         });
         an.sort((x, y) => x.m - y.m);
         if (an.length < 2 || an.some((a, i) => i && a.t < an[i - 1].t - 1)) continue;
-        if (ahora < an[0].t || ahora > an[an.length - 1].t) continue;
-        const i = Math.max(1, an.findIndex(a => a.t >= ahora)), a0 = an[i - 1], a1 = an[i];
-        const f = a1.t === a0.t ? 0 : Math.min(1, Math.max(0, (ahora - a0.t) / (a1.t - a0.t))), m = a0.m + (a1.m - a0.m) * f;
-        out.push({ linea: L, sentido: b.sentido, ramal: b.ramal, ...puntoEn(R.pts, m), m, anterior: a0.nombre, proxima: a1.nombre, tProxima: a1.t, ida: esIda(L, b.sentido) });
+        if (ahora > an[an.length - 1].t) continue;                       // ya terminó (o ya pasó por todas las paradas que conozco)
+        let m, anterior, proxima, tProxima, estimadoAtras = false;
+        if (ahora < an[0].t) {
+          // todavía no llegó a su primera parada con horario: lo estimo hacia atrás con la velocidad del tramo siguiente
+          // (si el sitio ya no muestra las paradas anteriores, que pasaron hace rato, igual está en camino)
+          const falta = an[0].t - ahora;
+          if (falta > MAX_ATRAS) continue;
+          const vel = Math.min(600, Math.max(150, (an[1].m - an[0].m) / Math.max(1, an[1].t - an[0].t)));
+          m = an[0].m - vel * falta;
+          if (m < 0) continue;                                           // todavía no salió de la cabecera
+          anterior = 'el tramo anterior'; proxima = an[0].nombre; tProxima = an[0].t; estimadoAtras = true;
+        } else {
+          const i = Math.max(1, an.findIndex(a => a.t >= ahora)), a0 = an[i - 1], a1 = an[i];
+          const f = a1.t === a0.t ? 0 : Math.min(1, Math.max(0, (ahora - a0.t) / (a1.t - a0.t)));
+          m = a0.m + (a1.m - a0.m) * f; anterior = a0.nombre; proxima = a1.nombre; tProxima = a1.t;
+        }
+        out.push({ linea: L, sentido: b.sentido, ramal: b.ramal, ...puntoEn(R.pts, m), m, anterior, proxima, tProxima, estimadoAtras, ida: esIda(L, b.sentido) });
       }
     }
   }

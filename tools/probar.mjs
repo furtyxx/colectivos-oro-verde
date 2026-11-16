@@ -307,6 +307,25 @@ console.log('Solo colectivos que todavía no pasaron (hora actual)');
   ok(ayer.recomendado && h(ayer.recomendado.salida.t) === '13:42', 'para otro día (sin hora actual) se ven todos los servicios');
 }
 
+console.log('Posición estimada: colectivo en camino y paradas fuera del mapa');
+{
+  const S6 = L('6').sentidos.ida, ps = S6.paradas.filter((p, i) => p.m[0] != null && i % 3 === 0 && i > 8);
+  const filas = [ps.map(p => Math.round(M.aMin('16:00') + p.m[0] / 330))];
+  const bloque = { sentido: 'ida', ramal: 0, cartel: '', paradas: ps.map(p => p.n), filas };
+  const hor = { 6: { domingo: { franjas: '1'.repeat(48), bloques: [bloque] } } };
+  const primera = filas[0][0], antes = M.busesEnVivo({ lineas, horarios: hor, tipo: 'domingo', ahora: primera - 8 });
+  ok(antes.length === 1 && antes[0].estimadoAtras && antes[0].m < ps[0].m[0] && antes[0].m > ps[0].m[0] - 8 * 600 && antes[0].proxima === ps[0].nombre, `8 min antes de su primera parada con horario se lo estima en camino (${antes[0] ? Math.round(ps[0].m[0] - antes[0].m) : '—'} m antes)`);
+  ok(M.busesEnVivo({ lineas, horarios: hor, tipo: 'domingo', ahora: primera - 40 }).length === 0, 'mucho antes de su primera parada no se lo ubica (puede no haber salido)');
+  // una parada que el mapa no trae (n >= 1000) con su propia posición
+  const extra = { n: 1000, nombre: 'Parada del sitio', lat: S6.paradas[12].lat, lon: S6.paradas[12].lon, m: S6.paradas[12].m[0] };   // entre la 1ª y la 3ª parada con horario
+  const b2 = { sentido: 'ida', ramal: 0, cartel: '', paradas: [ps[0].n, 1000, ps[2].n], extras: [extra], filas: [[primera, primera + Math.round((extra.m - ps[0].m[0]) / 330), filas[0][2]]] };
+  const hor2 = { 6: { domingo: { franjas: '1'.repeat(48), bloques: [b2] } } };
+  const a = M.anclaDeBloque(S6, b2, 1000), c = M.anclaDeBloque(S6, b2, ps[0].n);
+  ok(a && a.nombre === 'Parada del sitio' && a.m === extra.m && c.nombre === ps[0].nombre && !M.anclaDeBloque(S6, b2, 1001), 'las paradas del sitio que el mapa no trae se leen del propio bloque');
+  const medio = Math.round((primera + b2.filas[0][1]) / 2), b3 = M.busesEnVivo({ lineas, horarios: hor2, tipo: 'domingo', ahora: medio });
+  ok(b3.length === 1 && b3[0].anterior === ps[0].nombre && b3[0].proxima === 'Parada del sitio', 'un colectivo entre una parada del mapa y una parada del sitio se ubica entre las dos');
+}
+
 console.log('Próximos arribos en una parada');
 {
   const S6 = L('6').sentidos.ida, ps = S6.paradas.filter((p, i) => p.m[0] != null && i % 3 === 0);
@@ -354,6 +373,22 @@ console.log('Recolector de horarios de Paraná Online');
   const der = H.derivar(c6, { ...L('6'), sentidos: { ida: { ...S, paradas: S.paradas.map(p => ({ ...p })) } } });
   const b = der.domingo?.bloques.find(x => x.sentido === 'ida');
   ok(b && b.filas.length === 2 && b.filas.every(f => f.filter(x => x != null).length === 3) && b.filas[0][0] === 600 && b.filas[1][2] === 680, 'dos colectivos separados por una hora se arman como dos servicios de 3 paradas');
+}
+
+console.log('Paradas del sitio que el mapa de la línea no trae');
+{
+  const H = await import('./horarios.mjs'), G = await import('./geo.mjs');
+  const geo = G.indiceCalles(JSON.parse(fs.readFileSync(path.join(raiz, 'data/calles.json'), 'utf8')));
+  const S = L('6').sentidos.ida, pts = S.ramales[0].pts, p41 = S.paradas.find(p => /ALEJO PEIRET/.test(p.web || ''));
+  const u = H.colocar('AV. DE LAS AMERICAS Y ALEJO PEIRET', pts, geo);
+  ok(u && G.dist([u.lat, u.lon], [p41.lat, p41.lon]) < 60 && Math.abs(u.m - p41.m[0]) < 120, `por el cruce de calles queda en el recorrido, a ${u ? Math.round(G.dist([u.lat, u.lon], [p41.lat, p41.lon])) : '—'} m de la parada del mapa`);
+  ok(H.colocar('RUTA PROVINCIAL 11 Y FACULTAD DE CIENCIA Y TECNOLOGIA', pts, geo) !== undefined, 'nombres con más de una "Y" no rompen la búsqueda');
+  ok(H.colocar('PARADA QUE NO EXISTE Y NI EN OSM', pts, geo) === null, 'si no encuentra el cruce, no inventa una posición');
+  // por horario: una parada cuyos horarios son los de otra, 5 minutos más tarde
+  const resueltos = [{ pid: 'a', horas: [600, 660, 720], m: 1000 }, { pid: 'b', horas: [610, 670, 730], m: 4000 }];
+  const v = H.colocarPorHorario({ pid: 'x', horas: [605, 665, 725] }, resueltos, 20000);
+  ok(v && v.aprox && v.m >= 1000 + 5 * 330 - 5 && v.m <= 1000 + 5 * 330 + 5, 'por horario: 5 minutos después de la parada de 1000 m queda a ~2650 m');
+  ok(H.colocarPorHorario({ pid: 'y', horas: [1, 2, 3] }, resueltos, 20000) === null, 'por horario: si no se parece a ninguna, no se ubica');
 }
 
 console.log(fallas ? `\n${fallas} PRUEBA(S) FALLARON` : '\nTodo OK');

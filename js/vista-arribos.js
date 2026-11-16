@@ -1,7 +1,7 @@
 // Pestaña "Arribos": qué colectivos van a pasar por una parada (o por las paradas cerca tuyo), con cuánto falta.
 // Sale de los horarios por parada que publica Paraná Online (los programados); no es el GPS real de los coches.
 import { h, poner, toast, ahoraMin, hoyISO, fmtM } from './ui.js';
-import { E, D, guardar, lugar, planillasListas, recordarLugar, cuandoLlega, tipoAuto, refrescarHorarios, fuenteTxt } from './estado.js';
+import { E, D, guardar, lugar, planillasListas, recordarLugar, cuandoLlega, tipoAuto, refrescarHorarios, fuenteTxt, busesAhora, SEGUIMIENTO } from './estado.js';
 import { arribosCerca, aHora, NOMBRE_TIPO, esIda } from './motor.js';
 import { abrirBuscador, miUbicacion } from './buscador.js';
 import { irALinea } from './vista-lineas.js';
@@ -46,6 +46,9 @@ export function vistaArribos(raiz) {
     const ahora = ahoraMin() + new Date().getSeconds() / 60, hoy = hoyISO(), auto = tipoAuto(hoy);
     const lista = arribosCerca({ lineas: D.lineas, planillas: planillasListas(), horarios: D.horarios?.lineas || null, tipo: auto.tipo, punto, radio: A.radio, ahora, cfg: E.cfg });
     const con = lista.filter(x => x.arribos.length), sin = lista.filter(x => !x.arribos.length);
+    const buses = busesAhora(null);
+    // dónde está ahora el colectivo que va a llegar primero a esa parada (el más cercano que todavía no pasó)
+    const dondeViene = x => buses.filter(b => b.linea.id === x.linea.id && b.sentido === x.sentido && b.ramal === x.ri && b.m <= x.parada.m[x.ri] + 30).sort((a, b) => b.m - a.m)[0];
     poner(resultado,
       h('p', { class: 'suave' }, `Son las ${aHora(Math.floor(ahora))} (horario ${NOMBRE_TIPO[auto.tipo]}). ${con.length ? `${con.length} línea(s) con colectivos en las próximas 3 horas.` : ''}`),
       !lista.length ? h('div', { class: 'nota ojo' }, `No encontré paradas de colectivo a menos de ${fmtM(A.radio)}. Probá con una distancia mayor.`) : null,
@@ -54,6 +57,7 @@ export function vistaArribos(raiz) {
         h('div', { class: 'cab' }, h('span', { class: 'lin' }, x.linea.nombre.replace('Línea ', 'Línea ')), h('span', { class: 'etq' }, esIda(x.linea, x.sentido) ? 'Ida' : 'Vuelta'), h('span', { class: 'suave chico' }, x.desc)),
         h('div', { class: 'fila', style: 'align-items:baseline' },
           h('div', { class: 'grande-hora' }, aHora(x.arribos[0].t % 1440)), h('div', { class: 'crece' }, h('strong', {}, faltaTxt(x.arribos[0].falta)), h('div', { class: 'suave chico' }, `en ${x.parada.nombre} (a ${fmtM(x.d)})`))),
+        (b => b ? h('p', { class: 'posicion chico' }, h('strong', {}, '🚌 Ahora viene ' + (b.estimadoAtras ? `en camino hacia ${b.proxima}` : `entre ${b.anterior} y ${b.proxima}`)), `a ${fmtM(Math.max(0, x.parada.m[x.ri] - b.m))} de la parada. `, h('span', { class: 'suave' }, SEGUIMIENTO + '.')) : h('p', { class: 'suave chico' }, 'Todavía no se ubica por dónde viene (puede no haber salido todavía). ' + SEGUIMIENTO + '.'))(dondeViene(x)),
         h('div', { class: 'chips-hora' }, x.arribos.slice(1).map(a => h('span', { class: 'btn mini', style: 'cursor:default' }, `${a.fuente === 'sitio' ? '' : '≈ '}${aHora(a.t % 1440)} · ${faltaTxt(a.falta)}`))),
         h('p', { class: 'chico ' + (x.arribos.every(a => a.fuente === 'sitio') ? 'bien-txt' : 'ojo-txt') }, 'Fuente del horario: ', h('strong', {}, [...new Set(x.arribos.map(a => fuenteTxt(a.fuente)))].join(' y ')), x.arribos.every(a => a.fuente === 'sitio') ? '' : ' (los marcados con ≈ son estimados; todavía no tengo el horario de Paraná Online para esa parada)'),
         h('button', { class: 'btn mini', onclick: () => irALinea(x.linea.id, x.sentido) }, 'Ver todos los horarios de la línea'))),

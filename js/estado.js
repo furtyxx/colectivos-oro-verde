@@ -75,6 +75,8 @@ export const cuandoLlega = 'https://cuandollega.smartmovepro.net/parana';
 /** De dónde sale cada horario. Hoy la app NO usa "Cuándo llega": todo sale de Paraná Online o, si falta, de las planillas. */
 export const FUENTES = { sitio: 'Paraná Online', planilla: 'planilla (estimado)', cuandollega: 'Cuándo llega (tiempo real)' };
 export const fuenteTxt = f => FUENTES[f] || FUENTES.planilla;
+/** Cómo se sigue a cada colectivo en el mapa: hoy es una estimación con los horarios por parada de Paraná Online. */
+export const SEGUIMIENTO = 'Seguimiento estimado con los horarios por parada de Paraná Online (no es el GPS de los coches ni Cuándo llega)';
 
 /** Qué horario corre en una fecha: lo que mostraba Paraná Online ese día o, si no, el calendario. */
 export function tipoAuto(fecha) {

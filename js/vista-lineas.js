@@ -1,7 +1,7 @@
 // Pestaña "Líneas": colectivos en vivo (estimados), recorrido, horarios, historial y paradas de cada línea.
 import { h, dialogo, mapa, gmaps, toast, poner, hoyISO } from './ui.js';
-import { E, D, guardar, recordarLugar, cuandoLlega, calleListas, cargarCalles, tipoAuto, busesAhora, busesParaMapa, LEYENDA_BUS, refrescarHorarios, cargarResumen } from './estado.js';
-import { aHora, NOMBRE_TIPO } from './motor.js';
+import { E, D, guardar, recordarLugar, cuandoLlega, calleListas, cargarCalles, tipoAuto, busesAhora, busesParaMapa, LEYENDA_BUS, SEGUIMIENTO, refrescarHorarios, cargarResumen } from './estado.js';
+import { aHora, NOMBRE_TIPO, anclaDeBloque } from './motor.js';
 
 const VIVO = '__vivo';
 let sel = { linea: VIVO, sentido: 'ida', tipo: null };
@@ -33,7 +33,7 @@ function accionesParada(L, s, sentido) {
   ]);
 }
 
-const leyendaBuses = () => LEYENDA_BUS.map(([t, c]) => h('span', {}, h('i', { style: `background:${c}` }), t));
+const leyendaBuses = () => [...LEYENDA_BUS.map(([t, c]) => h('span', {}, h('i', { style: `background:${c}` }), t)), h('span', { style: 'flex-basis:100%' }, SEGUIMIENTO)];
 
 /** Mapa con los colectivos estimados; se vuelve a dibujar solo cada 15 s mientras la pestaña esté abierta. */
 function mapaEnVivo({ ids, rutas = [], paradas = [], clave, alto = 400, lista = true }) {
@@ -46,7 +46,7 @@ function mapaEnVivo({ ids, rutas = [], paradas = [], clave, alto = 400, lista = 
       h('p', { class: 'suave chico' }, buses.length ? `${buses.length} colectivo(s) circulando ahora, según los horarios de Paraná Online (estimado, no es el GPS real). Actualizado ${new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}.`
         : D.horarios ? 'Ahora no hay colectivos circulando según los horarios que tengo (o todavía no tengo los de este tramo del día).' : 'Todavía no cargaron los horarios.'),
       buses.length ? h('details', {}, h('summary', { class: 'suave' }, 'Ver la lista'), h('ul', { class: 'lista' }, buses.sort((a, b) => a.linea.id.localeCompare(b.linea.id, 'es', { numeric: true })).map(b => h('li', { style: 'padding:6px 0' },
-        h('strong', {}, b.linea.nombre), ` · ${b.ida ? 'Ida' : 'Vuelta'}`, h('small', {}, `${b.linea.sentidos[b.sentido]?.desc || ''} · entre ${b.anterior} y ${b.proxima} · llega ${aHora(b.tProxima % 1440)}`)))) ) : null);
+        h('strong', {}, b.linea.nombre), ` · ${b.ida ? 'Ida' : 'Vuelta'}`, h('small', {}, `${b.linea.sentidos[b.sentido]?.desc || ''} · ${b.estimadoAtras ? 'en camino hacia ' + b.proxima : 'entre ' + b.anterior + ' y ' + b.proxima} · llega ${aHora(b.tProxima % 1440)}`)))) ) : null);
   };
   pintar();
   let n = 0;
@@ -75,7 +75,7 @@ function panelHorarios(L, sentido, repintar) {
   const cob = T ? Math.round((T.franjas.match(/1/g) || []).length / 48 * 100) : 0;
   const ver = x => dialogo(`${L.nombre} · ${aHora(x.t0 % 1440)}`, [
     h('p', { class: 'suave chico' }, S.desc),
-    h('ol', { class: 'lista' }, x.b.paradas.map((n, k) => x.f[k] != null ? h('li', { style: 'padding:6px 0;display:grid;grid-template-columns:4.2em 1fr;gap:8px' }, h('strong', {}, aHora(x.f[k] % 1440)), h('span', {}, S.paradas[n - 1].nombre)) : null)),
+    h('ol', { class: 'lista' }, x.b.paradas.map((n, k) => x.f[k] != null ? h('li', { style: 'padding:6px 0;display:grid;grid-template-columns:4.2em 1fr;gap:8px' }, h('strong', {}, aHora(x.f[k] % 1440)), h('span', {}, (anclaDeBloque(S, x.b, n) || {}).nombre || '')) : null)),
   ]);
   return h('section', { class: 'panel' },
     h('h2', {}, 'Horarios de este sentido'),
