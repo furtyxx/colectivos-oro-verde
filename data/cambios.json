@@ -1,35 +1,63 @@
 {
- "revisado": "2026-11-21T02:33:34.352Z",
+ "revisado": "2026-11-21T07:35:40.403Z",
  "tipoHoy": {
-  "fecha": "2026-11-20",
-  "tipo": "habiles",
+  "fecha": "2026-11-21",
+  "tipo": "sabado",
   "porLinea": {
-   "4": "habiles",
-   "6": "habiles",
-   "12": "habiles",
-   "15": "habiles",
-   "20": "habiles",
-   "22": "habiles",
-   "24": "habiles",
-   "17-AM": "habiles",
-   "22E-AN": "habiles",
-   "A": "habiles",
-   "B": "habiles",
-   "C": "habiles",
-   "D": "habiles",
-   "E": "habiles",
-   "F": "habiles",
-   "G": "habiles",
-   "H": "habiles",
-   "L": "habiles",
-   "M": "habiles",
-   "P": "habiles",
-   "R": "habiles",
-   "S": "habiles"
+   "4": "sabado",
+   "6": "sabado",
+   "12": "sabado",
+   "15": "sabado",
+   "20": "sabado",
+   "22": "sabado",
+   "24": "sabado",
+   "17-AM": "sabado",
+   "22E-AN": "sabado",
+   "A": "sabado",
+   "B": "sabado",
+   "C": "sabado",
+   "D": "sabado",
+   "E": "sabado",
+   "F": "sabado",
+   "G": "sabado",
+   "H": "sabado",
+   "L": "sabado",
+   "M": "sabado",
+   "P": "sabado",
+   "R": "sabado",
+   "S": "sabado"
   }
  },
  "errores": [],
  "historial": [
+  {
+   "fecha": "2026-11-21",
+   "linea": "S",
+   "detalle": [
+    "34: pasó de 17 a 16 paradas"
+   ]
+  },
+  {
+   "fecha": "2026-11-21",
+   "linea": "M",
+   "detalle": [
+    "27: pasó de 18 a 5 paradas"
+   ]
+  },
+  {
+   "fecha": "2026-11-21",
+   "linea": "L",
+   "detalle": [
+    "26: pasó de 20 a 12 paradas"
+   ]
+  },
+  {
+   "fecha": "2026-11-21",
+   "linea": "B",
+   "detalle": [
+    "3: pasó de 21 a 18 paradas"
+   ]
+  },
   {
    "fecha": "2026-11-16",
    "linea": "S",
