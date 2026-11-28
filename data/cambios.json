@@ -1,31 +1,63 @@
 {
- "revisado": "2026-11-28T07:33:45.874Z",
- "tipoHoy": null,
- "errores": [
-  "horarios-linea-4: la página no tiene mapa",
-  "horarios-linea-6: la página no tiene mapa",
-  "horarios-linea-12: la página no tiene mapa",
-  "horarios-linea-15: la página no tiene mapa",
-  "horarios-linea-17-am: la página no tiene mapa",
-  "horarios-linea-20: la página no tiene mapa",
-  "horarios-linea-22: la página no tiene mapa",
-  "horarios-linea-22e-an: la página no tiene mapa",
-  "horarios-linea-24: la página no tiene mapa",
-  "linea-a: la página no tiene mapa",
-  "linea-b: la página no tiene mapa",
-  "linea-c: la página no tiene mapa",
-  "linea-d: la página no tiene mapa",
-  "linea-e: la página no tiene mapa",
-  "linea-f: la página no tiene mapa",
-  "linea-g: la página no tiene mapa",
-  "linea-h: la página no tiene mapa",
-  "linea-l: la página no tiene mapa",
-  "linea-m: la página no tiene mapa",
-  "linea-p: la página no tiene mapa",
-  "linea-r: la página no tiene mapa",
-  "linea-s: la página no tiene mapa"
- ],
+ "revisado": "2026-11-28T12:17:10.320Z",
+ "tipoHoy": {
+  "fecha": "2026-11-28",
+  "tipo": "sabado",
+  "porLinea": {
+   "4": "sabado",
+   "6": "sabado",
+   "12": "sabado",
+   "15": "sabado",
+   "20": "sabado",
+   "22": "sabado",
+   "24": "sabado",
+   "17-AM": "sabado",
+   "22E-AN": "sabado",
+   "A": "sabado",
+   "B": "sabado",
+   "C": "sabado",
+   "D": "sabado",
+   "E": "sabado",
+   "F": "sabado",
+   "G": "sabado",
+   "H": "sabado",
+   "L": "sabado",
+   "M": "sabado",
+   "P": "sabado",
+   "R": "sabado",
+   "S": "sabado"
+  }
+ },
+ "errores": [],
  "historial": [
+  {
+   "fecha": "2026-11-28",
+   "linea": "S",
+   "detalle": [
+    "34: pasó de 17 a 16 paradas"
+   ]
+  },
+  {
+   "fecha": "2026-11-28",
+   "linea": "M",
+   "detalle": [
+    "27: pasó de 18 a 5 paradas"
+   ]
+  },
+  {
+   "fecha": "2026-11-28",
+   "linea": "L",
+   "detalle": [
+    "26: pasó de 20 a 12 paradas"
+   ]
+  },
+  {
+   "fecha": "2026-11-28",
+   "linea": "B",
+   "detalle": [
+    "3: pasó de 21 a 18 paradas"
+   ]
+  },
   {
    "fecha": "2026-11-24",
    "linea": "S",
